@@ -9,6 +9,7 @@ Author:              Holger Reinhardt
 Category:            Network
 Maintainer:          Holger Reinhardt <hreinhardt@gmail.com>
 Build-Type:          Simple
+Homepage:            https://github.com/hreinhardt/amqp
 Cabal-Version:       >=1.2
 Extra-source-files:  examples/ExampleConsumer.hs,
                      examples/ExampleProducer.hs
