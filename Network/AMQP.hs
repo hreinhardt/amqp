@@ -811,12 +811,16 @@ channelReceiver chan = do
                                                 (ShortString routingKey)) 
                                 properties msgBody) =
         withMVar (consumers chan) (\s -> do
-            let subscriber = fromJust $ M.lookup consumerTag s
-            let msg = msgFromContentHeaderProperties properties msgBody
-            let env =  Envelope {envDeliveryTag = deliveryTag, envRedelivered = redelivered, 
-                             envExchangeName = exchangeName, envRoutingKey = routingKey, envChannel = chan}
-                             
-            subscriber (msg, env)
+            case M.lookup consumerTag s of
+                Just subscriber -> do
+                    let msg = msgFromContentHeaderProperties properties msgBody
+                    let env =  Envelope {envDeliveryTag = deliveryTag, envRedelivered = redelivered,
+                                    envExchangeName = exchangeName, envRoutingKey = routingKey, envChannel = chan}
+
+                    subscriber (msg, env)
+                Nothing ->
+                    -- got a message, but have no registered subscriber; so drop it
+                    return ()
             )
             
     handleAsync (SimpleMethod (Channel_close errorNum (ShortString errorMsg) _ _)) = do
