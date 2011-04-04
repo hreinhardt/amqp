@@ -309,15 +309,14 @@ consumeMsgs chan queueName ack callback = do
 -- | stops a consumer that was started with 'consumeMsgs'
 cancelConsumer :: Channel -> ConsumerTag -> IO ()
 cancelConsumer chan consumerTag = do
-    --unregister the consumer
-    modifyMVar_ (consumers chan) $ \c -> return $ M.delete consumerTag c
-    
     (SimpleMethod (Basic_cancel_ok consumerTag')) <- request chan $ (SimpleMethod (Basic_cancel
         (ShortString consumerTag) -- consumer_tag
         False -- nowait
         ))
-    
-    return ()  
+
+    --unregister the consumer
+    modifyMVar_ (consumers chan) $ \c -> return $ M.delete consumerTag c
+
 
 -- | @publishMsg chan exchangeName routingKey msg@ publishes @msg@ to the exchange with the provided @exchangeName@. The effect of @routingKey@ depends on the type of the exchange
 -- 
