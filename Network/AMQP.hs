@@ -734,17 +734,21 @@ readFrameSock sock maxFrameSize = do
                 if len >= bytes
                     then return buf'
                     else recvExact' (bytes-len) buf'
-            
 
-        
 
-    
-writeFrameSock :: Socket -> Frame -> IO ()    
+
+
+
+writeFrameSock :: Socket -> Frame -> IO ()
 writeFrameSock sock x = do
-    NB.send sock $ toStrict $ runPut $ put x
-    return ()
-        
-    
+    f $ toStrict $ runPut $ put x
+  where
+    f x | BS.length x == 0 = return ()
+    f x = do
+        sent <- NB.send sock x
+        f $ BS.drop sent x
+
+
 
 ------------------------ CHANNEL -----------------------------
 
