@@ -1,3 +1,4 @@
+{-# OPTIONS -XBangPatterns #-}
 module Network.AMQP.Types
     (Octet,
      Bit,
