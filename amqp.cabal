@@ -1,5 +1,5 @@
 Name:                amqp
-Version:             0.3.1
+Version:             0.3.2
 Synopsis:            Client library for AMQP servers (currently only RabbitMQ)
 Description:         Client library for AMQP servers (currently only RabbitMQ)
 License:             BSD3
@@ -10,7 +10,8 @@ Category:            Network
 Maintainer:          Holger Reinhardt <hreinhardt@gmail.com>
 Build-Type:          Simple
 Homepage:            https://github.com/hreinhardt/amqp
-Cabal-Version:       >=1.2
+bug-reports:         https://github.com/hreinhardt/amqp/issues
+Cabal-Version:       >=1.6
 Extra-source-files:  examples/ExampleConsumer.hs,
                      examples/ExampleProducer.hs
 
@@ -18,7 +19,9 @@ Extra-source-files:  examples/ExampleConsumer.hs,
 
 Library
   Build-Depends:      base >= 4 && < 5, binary, containers>=0.2, bytestring>=0.9, network>=2.2.3.1
-  ghc-options:        -O2
   Exposed-modules:    Network.AMQP, Network.AMQP.Types
   Other-modules:      Network.AMQP.Generated, Network.AMQP.Helpers, Network.AMQP.Protocol
 
+source-repository head
+  type:     git
+  location: https://github.com/hreinhardt/amqp
