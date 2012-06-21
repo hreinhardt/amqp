@@ -936,9 +936,10 @@ writeAssembly' chan (ContentMethod m properties msg) = do
                 properties)] ++ 
             (if BL.length msg > 0 
              then do
-                --split into frames of maxFrameSize
+                -- split into frames of maxFrameSize
+                -- (need to substract 8 bytes to account for frame header and end-marker)
                 map ContentBodyPayload
-                    (splitLen msg (fromIntegral $ connMaxFrameSize $ connection chan)) 
+                    (splitLen msg $ (fromIntegral $ connMaxFrameSize $ connection chan) - 8)
              else []
             )
     writeFrames chan toWrite
