@@ -118,6 +118,8 @@ import qualified Data.Map as M
 import qualified Data.IntMap as IM
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BL
+import qualified Data.Sequence as Seq
+import qualified Data.Foldable as F
 import Data.IORef
 import Data.Maybe
 import Data.Int
@@ -757,7 +759,7 @@ writeFrameSock sock x = do
 data Channel = Channel {
                     connection :: Connection, 
                     inQueue :: Chan FramePayload, --incoming frames (from Connection)
-                    outstandingResponses :: Chan (MVar Assembly), -- for every request an MVar is stored here waiting for the response
+                    outstandingResponses :: MVar (Seq.Seq (MVar Assembly)), -- for every request an MVar is stored here waiting for the response
                     channelID :: Word16, 
                     lastConsumerTag :: MVar Int, 
                     
@@ -790,13 +792,14 @@ channelReceiver chan = do
     
     if isResponse p
         then do
-            emp <- isEmptyChan $ outstandingResponses chan
-            if emp 
-                then CE.throwIO $ userError "got response, but have no corresponding request"
-                else do
-                    x <- readChan (outstandingResponses chan)
-                    putMVar x p
-        
+            action <- modifyMVar (outstandingResponses chan) $ \val -> do
+                        case Seq.viewl val of
+                            x Seq.:< rest -> do
+                                return (rest, putMVar x p)
+                            Seq.EmptyL -> do
+                                return (val, CE.throwIO $ userError "got response, but have no corresponding request")
+            action
+
         --handle asynchronous assemblies
         else handleAsync p
 
@@ -858,15 +861,12 @@ closeChannel' c = do
         killOutstandingResponses $ outstandingResponses c
         return $ Just $ maybe "closed" id x
   where 
-    killOutstandingResponses :: Chan (MVar a) -> IO ()
-    killOutstandingResponses chan = do 
-        emp <- isEmptyChan chan
-        if emp 
-            then return ()
-            else do
-                x <- readChan chan
-                tryPutMVar x $ error "channel closed"
-                killOutstandingResponses chan
+    killOutstandingResponses :: (MVar (Seq.Seq (MVar a))) -> IO ()
+    killOutstandingResponses outResps = do
+        modifyMVar_ outResps $ \val -> do
+            F.mapM_ (\x -> tryPutMVar x $ error "channel closed") val
+            return undefined
+
    
     
    
@@ -876,7 +876,7 @@ closeChannel' c = do
 openChannel :: Connection -> IO Channel
 openChannel c = do
     newInQueue <- newChan
-    outRes <- newChan
+    outRes <- newMVar Seq.empty
     lastConsumerTag <- newMVar 0
     ca <- newLock
 
@@ -978,7 +978,7 @@ request chan m = do
             withMVar (chanClosed chan) $ \cc -> do
                 if isNothing cc
                     then do
-                        writeChan (outstandingResponses chan) res 
+                        modifyMVar_ (outstandingResponses chan) $ \val -> return $! val Seq.|> res
                         writeAssembly' chan m
                     else CE.throwIO $ userError "closed"
 
