@@ -580,7 +580,9 @@ connectionReceiver conn = do
 
                 
 -- | @openConnection hostname virtualHost loginName loginPassword@ opens a connection to an AMQP server running on @hostname@.
--- @virtualHost@ is used as a namespace for AMQP resources (default is \"/\"), so different applications could use multiple virtual hosts on the same AMQP server
+-- @virtualHost@ is used as a namespace for AMQP resources (default is \"/\"), so different applications could use multiple virtual hosts on the same AMQP server.
+--
+-- You must call 'closeConnection' before your program exits to ensure that all published messages are received by the server.
 --
 -- NOTE: If the login name, password or virtual host are invalid, this method will throw a 'ConnectionClosedException'. The exception will not contain a reason why the connection was closed, so you'll have to find out yourself.
 openConnection :: String -> String -> String -> String -> IO Connection           
@@ -671,6 +673,8 @@ openConnection' host port vhost loginName loginPassword = do
         
 
 -- | closes a connection
+--
+-- Make sure to call this function before your program exits to ensure that all published messages are received by the server.
 closeConnection :: Connection -> IO ()
 closeConnection c = do
     CE.catch (
