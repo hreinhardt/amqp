@@ -834,9 +834,7 @@ channelReceiver chan = do
             )
             
     handleAsync (SimpleMethod (Channel_close errorNum (ShortString errorMsg) _ _)) = do
-        
-        modifyMVar_ (chanClosed chan) $ \x -> return $ Just errorMsg
-        closeChannel' chan
+        closeChannel' chan errorMsg
         killThread =<< myThreadId
         
     handleAsync (SimpleMethod (Channel_flow active)) = do
@@ -857,13 +855,16 @@ channelReceiver chan = do
         
         
 -- closes the channel internally; but doesn't tell the server        
-closeChannel' c = do
+closeChannel' c reason = do
     modifyMVar_ (connChannels $ connection c) $ \old -> return $ IM.delete (fromIntegral $ channelID c) old
     -- mark channel as closed
     modifyMVar_ (chanClosed c) $ \x -> do
-        killLock $ chanActive c
-        killOutstandingResponses $ outstandingResponses c
-        return $ Just $ maybe "closed" id x
+        if isNothing x
+            then do
+                killLock $ chanActive c
+                killOutstandingResponses $ outstandingResponses c
+                return $ Just $ maybe reason id x
+            else return x
   where 
     killOutstandingResponses :: (MVar (Seq.Seq (MVar a))) -> IO ()
     killOutstandingResponses outResps = do
@@ -894,7 +895,7 @@ openChannel c = do
     
 
     thrID <- forkIO $ CE.finally (channelReceiver newChannel)
-        (closeChannel' newChannel)
+        (closeChannel' newChannel "closed")
 
     --add new channel to connection's channel map
     modifyMVar_ (connChannels c) (\oldMap -> return $ IM.insert newChannelID (newChannel, thrID) oldMap)
