@@ -23,13 +23,14 @@ import Data.Char
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
+import Control.Applicative
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.ByteString.Lazy.Internal as BL
 import qualified Data.Binary.Put as BPut
 import Control.Monad
 import qualified Data.Map as M
-
+import Data.Binary.IEEE754
 
 
 -- performs runGet on a bytestring until the string is empty
@@ -66,7 +67,7 @@ instance Binary ShortString where
       dat <- getByteString (fromIntegral len)
       return $ ShortString $ BS.unpack dat
     put (ShortString x) = do
-        let s = BS.pack $ take 255 x --ensure string isn't longer than 255 bytes
+        let s = BS.pack $ take 255 x
         putWord8 $ fromIntegral (BS.length s)
         putByteString s
     
@@ -81,12 +82,14 @@ instance Binary LongString where
         putWord32be $ fromIntegral (length x)
         putByteString (BS.pack x) 
 
-type Timestamp = LongLongInt
+type Timestamp = Word64
 
 
 
 --- field-table ---
-data FieldTable = FieldTable (M.Map ShortString FieldValue)
+
+-- | Keys must be shorter than 256 characters
+data FieldTable = FieldTable (M.Map String FieldValue)
     deriving Show
 instance Binary FieldTable where
     get = do
@@ -97,50 +100,89 @@ instance Binary FieldTable where
                 fvp <- getLazyByteString (fromIntegral len)
                 let !fields = readMany fvp
                 
-                return $ FieldTable $ M.fromList fields
+                return $ FieldTable $ M.fromList $ map (\(ShortString a, b) -> (a,b)) fields
             else return $ FieldTable $ M.empty
                 
     put (FieldTable fvp) = do
-        let bytes = runPut (putMany $ M.toList fvp) :: BL.ByteString
+        let bytes = runPut (putMany $ map (\(a,b) -> (ShortString a, b)) $ M.toList fvp) :: BL.ByteString
         put ((fromIntegral $ BL.length bytes):: LongInt)
         putLazyByteString bytes
     
 
     
---- field-value ---  
+--- field-value ---
 
-data FieldValue = FVLongString LongString
-                | FVSignedInt Int32
-                | FVDecimalValue DecimalValue
+data FieldValue = FVBool Bool
+                | FVInt8 Int8
+                | FVInt16 Int16
+                | FVInt32 Int32
+                | FVInt64 Int64
+                | FVFloat Float
+                | FVDouble Double
+                | FVDecimal DecimalValue
+                | FVString String
+                | FVFieldArray [FieldValue]
                 | FVTimestamp Timestamp
                 | FVFieldTable FieldTable
+                | FVVoid
+                | FVByteArray BS.ByteString
     deriving Show
                 
 instance Binary FieldValue where
     get = do
         fieldType <- getWord8
         case chr $ fromIntegral fieldType of
+            't' -> FVBool <$> get
+            'b' -> FVInt8 <$> get
+            's' -> FVInt16 <$> get
+            'I' -> FVInt32 <$> get
+            'l' -> FVInt64 <$> get
+            'f' -> FVFloat <$> getFloat32be
+            'd' -> FVDouble <$> getFloat64be
+            'D' -> FVDecimal <$> get
             'S' -> do 
-                x <- get :: Get LongString
-                return $ FVLongString x
-            'I' -> do
-                x <- get :: Get Int32
-                return $ FVSignedInt x
-            'D' -> do
-                x <- get :: Get DecimalValue
-                return $ FVDecimalValue $ x
-            'T' -> do
-                x <- get :: Get Timestamp
-                return $ FVTimestamp x
-            'F' -> do
-                ft <- get :: Get FieldTable
-                return $ FVFieldTable ft
-    put (FVLongString s)   = put 'S' >> put s
-    put (FVSignedInt s)    = put 'I' >> put s
-    put (FVDecimalValue s) = put 'D' >> put s
+                LongString x <- get :: Get LongString
+                return $ FVString x
+            'A' -> do
+                len <- get :: Get Int32 
+                if len > 0 
+                    then do
+                        fvp <- getLazyByteString (fromIntegral len)
+                        let !fields = readMany fvp
+                        return $ FVFieldArray fields
+                    else return $ FVFieldArray []
+            'T' -> FVTimestamp <$> get
+            'F' -> FVFieldTable <$> get
+            'V' -> return FVVoid
+            'x' -> do
+                len <- get :: Get Word32
+                FVByteArray <$> getByteString (fromIntegral len)
+
+    put (FVBool x) = put 't' >> put x
+    put (FVInt8 x) = put 'b' >> put x
+    put (FVInt16 x) = put 's' >> put x
+    put (FVInt32 x) = put 'I' >> put x
+    put (FVInt64 x) = put 'l' >> put x
+    put (FVFloat x) = put 'f' >> putFloat32be x
+    put (FVDouble x) = put 'd' >> putFloat64be x
+    put (FVDecimal x) = put 'D' >> put x
+    put (FVString x) = put 'S' >> put (LongString x)
+    put (FVFieldArray x) = do
+        put 'A'
+        if length x == 0 
+            then put (0 :: Int32)
+            else do
+                let bytes = runPut (putMany x) :: BL.ByteString
+                put ((fromIntegral $ BL.length bytes):: Int32)
+                putLazyByteString bytes
     put (FVTimestamp s)    = put 'T' >> put s
     put (FVFieldTable s)   = put 'F' >> put s
-    
+    put (FVVoid) = put 'V'
+    put (FVByteArray x) = do
+        put 'x'
+        let len = fromIntegral (BS.length x) :: Word32
+        put len
+        putByteString x
     
     
 data DecimalValue = DecimalValue Decimals LongInt    

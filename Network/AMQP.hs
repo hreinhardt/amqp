@@ -69,6 +69,7 @@ module Network.AMQP (
     newQueue,
     declareQueue,
     bindQueue,
+    bindQueue',
     purgeQueue,
     deleteQueue,
     
@@ -159,7 +160,7 @@ TODO:
 data ExchangeOpts = ExchangeOpts 
                 {
                     exchangeName :: String, -- ^ (must be set); the name of the exchange
-                    exchangeType :: String, -- ^ (must be set); the type of the exchange (\"fanout\", \"direct\", \"topic\")
+                    exchangeType :: String, -- ^ (must be set); the type of the exchange (\"fanout\", \"direct\", \"topic\", \"headers\")
                     
                     -- optional
                     exchangePassive :: Bool, -- ^ (default 'False'); If set, the server will not create the exchange. The client can use this to check whether an exchange exists without modifying the server state.
@@ -240,14 +241,19 @@ declareQueue chan queue = do
 -- | @bindQueue chan queueName exchangeName routingKey@ binds the queue to the exchange using the provided routing key
 bindQueue :: Channel -> String -> String -> String -> IO ()  
 bindQueue chan queueName exchangeName routingKey = do
+    bindQueue' chan queueName exchangeName routingKey (FieldTable (M.fromList []))
+
+-- | an extended version of @bindQueue@ that allows you to include arbitrary arguments. This is useful to use the @headers@ exchange-type.
+bindQueue' :: Channel -> String -> String -> String -> FieldTable -> IO ()
+bindQueue' chan queueName exchangeName routingKey args = do
     (SimpleMethod Queue_bind_ok) <- request chan (SimpleMethod (Queue_bind
         1 -- ticket; ignored by rabbitMQ
         (ShortString queueName)
         (ShortString exchangeName)
         (ShortString routingKey)
         False -- nowait
-        (FieldTable (M.fromList [])))) -- arguments 
-
+        args -- arguments
+        ))
     return ()
 
 -- | remove all messages from the queue; returns the number of messages that were in the queue       
@@ -663,7 +669,7 @@ openConnection' host port vhost loginName loginPassword = do
     start_ok = (Frame 0 (MethodPayload (Connection_start_ok  (FieldTable (M.fromList []))
         (ShortString "AMQPLAIN") 
         --login has to be a table without first 4 bytes    
-        (LongString (drop 4 $ BL.unpack $ runPut $ put $ FieldTable (M.fromList [(ShortString "LOGIN",FVLongString $ LongString loginName), (ShortString "PASSWORD", FVLongString $ LongString loginPassword)]))) 
+        (LongString (drop 4 $ BL.unpack $ runPut $ put $ FieldTable (M.fromList [("LOGIN",FVString loginName), ("PASSWORD", FVString loginPassword)]))) 
         (ShortString "en_US")) ))    
     open = (Frame 0 (MethodPayload (Connection_open 
         (ShortString vhost)  --virtual host
