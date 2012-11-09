@@ -336,7 +336,7 @@ publishMsg chan exchangeName routingKey msg = do
             (CHBasic
             (fmap ShortString $ msgContentType msg)
             Nothing
-            Nothing
+            (msgHeaders msg)
             (fmap deliveryModeToInt $ msgDeliveryMode msg) -- delivery_mode 
             Nothing
             (fmap ShortString $ msgCorrelationID msg)
@@ -483,13 +483,14 @@ data Message = Message {
                 msgID :: Maybe String, -- ^ use in any way you like; this doesn't affect the way the message is handled
                 msgContentType :: Maybe String,
                 msgReplyTo :: Maybe String,
-                msgCorrelationID :: Maybe String
+                msgCorrelationID :: Maybe String,
+                msgHeaders :: Maybe FieldTable
                 }
     deriving Show
 
 -- | a 'Msg' with defaults set; you should override at least 'msgBody'
 newMsg :: Message    
-newMsg = Message (BL.empty) Nothing Nothing Nothing Nothing Nothing Nothing
+newMsg = Message (BL.empty) Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
 ------------- ASSEMBLY -------------------------    
 -- an assembly is a higher-level object consisting of several frames (like in amqp 0-10)
@@ -783,7 +784,7 @@ msgFromContentHeaderProperties
         correlationID = fromShortString correlation_id
         
         in
-            Message msgBody (fmap intToDeliveryMode delivery_mode) timestamp msgId contentType replyTo correlationID
+            Message msgBody (fmap intToDeliveryMode delivery_mode) timestamp msgId contentType replyTo correlationID headers
   where
     fromShortString (Just (ShortString s)) = Just s
     fromShortString _ = Nothing
