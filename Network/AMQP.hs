@@ -1,50 +1,50 @@
-{-# OPTIONS -XBangPatterns -XScopedTypeVariables -XDeriveDataTypeable #-}
-{- |
+{-# OPTIONS -XBangPatterns -XScopedTypeVariables -XDeriveDataTypeable -XOverloadedStrings #-}
+-- |
+--
+-- A client library for AMQP servers implementing the 0-8 spec; currently only supports RabbitMQ (see <http://www.rabbitmq.com>)
+--
+-- A good introduction to AMQP can be found here (though it uses Python): <http://blogs.digitar.com/jjww/2009/01/rabbits-and-warrens/>
+--
+-- /Example/:
+--
+-- Connect to a server, declare a queue and an exchange and setup a callback for messages coming in on the queue. Then publish a single message to our new exchange
+--
+-- >{-# LANGUAGE OverloadedStrings #-}
+-- >import Network.AMQP
+-- >import qualified Data.ByteString.Lazy.Char8 as BL
+-- >
+-- >main = do
+-- >    conn <- openConnection "127.0.0.1" "/" "guest" "guest"
+-- >    chan <- openChannel conn
+-- >
+-- >    -- declare a queue, exchange and binding
+-- >    declareQueue chan newQueue {queueName = "myQueue"}
+-- >    declareExchange chan newExchange {exchangeName = "myExchange", exchangeType = "direct"}
+-- >    bindQueue chan "myQueue" "myExchange" "myKey"
+-- >
+-- >    -- subscribe to the queue
+-- >    consumeMsgs chan "myQueue" Ack myCallback
+-- >
+-- >    -- publish a message to our new exchange
+-- >    publishMsg chan "myExchange" "myKey"
+-- >        newMsg {msgBody = (BL.pack "hello world"),
+-- >                msgDeliveryMode = Just Persistent}
+-- >
+-- >    getLine -- wait for keypress
+-- >    closeConnection conn
+-- >    putStrLn "connection closed"
+-- >
+-- >
+-- >myCallback :: (Message,Envelope) -> IO ()
+-- >myCallback (msg, env) = do
+-- >    putStrLn $ "received message: "++(BL.unpack $ msgBody msg)
+-- >    -- acknowledge receiving the message
+-- >    ackEnv env
+--
+-- /Exception handling/:
+--
+-- Some function calls can make the AMQP server throw an AMQP exception, which has the side-effect of closing the connection or channel. The AMQP exceptions are raised as Haskell exceptions (see 'AMQPException'). So upon receiving an 'AMQPException' you may have to reopen the channel or connection.
 
-A client library for AMQP servers implementing the 0-8 spec; currently only supports RabbitMQ (see <http://www.rabbitmq.com>)
-
-A good introduction to AMQP can be found here (though it uses Python): <http://blogs.digitar.com/jjww/2009/01/rabbits-and-warrens/>
-
-/Example/:
-
-Connect to a server, declare a queue and an exchange and setup a callback for messages coming in on the queue. Then publish a single message to our new exchange
-
->import Network.AMQP
->import qualified Data.ByteString.Lazy.Char8 as BL
->
->main = do
->    conn <- openConnection "127.0.0.1" "/" "guest" "guest"
->    chan <- openChannel conn
->    
->    -- declare a queue, exchange and binding
->    declareQueue chan newQueue {queueName = "myQueue"}
->    declareExchange chan newExchange {exchangeName = "myExchange", exchangeType = "direct"}
->    bindQueue chan "myQueue" "myExchange" "myKey"
->
->    -- subscribe to the queue
->    consumeMsgs chan "myQueue" Ack myCallback
->
->    -- publish a message to our new exchange
->    publishMsg chan "myExchange" "myKey" 
->        newMsg {msgBody = (BL.pack "hello world"), 
->                msgDeliveryMode = Just Persistent}
->
->    getLine -- wait for keypress
->    closeConnection conn
->    putStrLn "connection closed"
->
->    
->myCallback :: (Message,Envelope) -> IO ()
->myCallback (msg, env) = do
->    putStrLn $ "received message: "++(BL.unpack $ msgBody msg)
->    -- acknowledge receiving the message
->    ackEnv env
-
-/Exception handling/:
-
-Some function calls can make the AMQP server throw an AMQP exception, which has the side-effect of closing the connection or channel. The AMQP exceptions are raised as Haskell exceptions (see 'AMQPException'). So upon receiving an 'AMQPException' you may have to reopen the channel or connection.
-
--}
 module Network.AMQP (
 
     -- * Connection
@@ -121,6 +121,8 @@ import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.Sequence as Seq
 import qualified Data.Foldable as F
+import qualified Data.Text as T
+import Data.Text (Text)
 import Data.IORef
 import Data.Maybe
 import Data.Int
@@ -159,8 +161,8 @@ TODO:
 -- | A record that contains the fields needed when creating a new exhange using 'declareExchange'. The default values apply when you use 'newExchange'.
 data ExchangeOpts = ExchangeOpts 
                 {
-                    exchangeName :: String, -- ^ (must be set); the name of the exchange
-                    exchangeType :: String, -- ^ (must be set); the type of the exchange (\"fanout\", \"direct\", \"topic\", \"headers\")
+                    exchangeName :: Text, -- ^ (must be set); the name of the exchange
+                    exchangeType :: Text, -- ^ (must be set); the type of the exchange (\"fanout\", \"direct\", \"topic\", \"headers\")
                     
                     -- optional
                     exchangePassive :: Bool, -- ^ (default 'False'); If set, the server will not create the exchange. The client can use this to check whether an exchange exists without modifying the server state.
@@ -190,7 +192,7 @@ declareExchange chan exchg = do
     
     
 -- | deletes the exchange with the provided name
-deleteExchange :: Channel -> String -> IO ()    
+deleteExchange :: Channel -> Text -> IO ()
 deleteExchange chan exchangeName = do    
     (SimpleMethod Exchange_delete_ok) <- request chan (SimpleMethod (Exchange_delete
         1 -- ticket; ignored by rabbitMQ
@@ -206,7 +208,7 @@ deleteExchange chan exchangeName = do
 data QueueOpts = QueueOpts 
              {
                 --must be set
-                queueName :: String, -- ^ (default \"\"); the name of the queue; if left empty, the server will generate a new name and return it from the 'declareQueue' method
+                queueName :: Text, -- ^ (default \"\"); the name of the queue; if left empty, the server will generate a new name and return it from the 'declareQueue' method
                 
                 --optional
                 queuePassive :: Bool, -- ^ (default 'False'); If set, the server will not create the queue.  The client can use this to check whether a queue exists without modifying the server state.                
@@ -224,7 +226,7 @@ newQueue = QueueOpts "" False True False False
 -- Returns a tuple @(queueName, messageCount, consumerCount)@. 
 -- @queueName@ is the name of the new queue (if you don't specify a queueName the server will autogenerate one). 
 -- @messageCount@ is the number of messages in the queue, which will be zero for newly-created queues. @consumerCount@ is the number of active consumers for the queue.
-declareQueue :: Channel -> QueueOpts -> IO (String, Int, Int)
+declareQueue :: Channel -> QueueOpts -> IO (Text, Int, Int)
 declareQueue chan queue = do
     (SimpleMethod (Queue_declare_ok (ShortString qName) messageCount consumerCount)) <- request chan $ (SimpleMethod (Queue_declare 
             1 -- ticket
@@ -239,12 +241,12 @@ declareQueue chan queue = do
     return (qName, fromIntegral messageCount, fromIntegral consumerCount)
 
 -- | @bindQueue chan queueName exchangeName routingKey@ binds the queue to the exchange using the provided routing key
-bindQueue :: Channel -> String -> String -> String -> IO ()  
+bindQueue :: Channel -> Text -> Text -> Text -> IO ()
 bindQueue chan queueName exchangeName routingKey = do
     bindQueue' chan queueName exchangeName routingKey (FieldTable (M.fromList []))
 
 -- | an extended version of @bindQueue@ that allows you to include arbitrary arguments. This is useful to use the @headers@ exchange-type.
-bindQueue' :: Channel -> String -> String -> String -> FieldTable -> IO ()
+bindQueue' :: Channel -> Text -> Text -> Text -> FieldTable -> IO ()
 bindQueue' chan queueName exchangeName routingKey args = do
     (SimpleMethod Queue_bind_ok) <- request chan (SimpleMethod (Queue_bind
         1 -- ticket; ignored by rabbitMQ
@@ -257,7 +259,7 @@ bindQueue' chan queueName exchangeName routingKey args = do
     return ()
 
 -- | remove all messages from the queue; returns the number of messages that were in the queue       
-purgeQueue :: Channel -> String -> IO Word32    
+purgeQueue :: Channel -> Text -> IO Word32
 purgeQueue chan queueName = do
     (SimpleMethod (Queue_purge_ok msgCount)) <- request chan $ (SimpleMethod (Queue_purge
         1 -- ticket
@@ -267,7 +269,7 @@ purgeQueue chan queueName = do
     return msgCount
 
 -- | deletes the queue; returns the number of messages that were in the queue before deletion
-deleteQueue :: Channel -> String -> IO Word32
+deleteQueue :: Channel -> Text -> IO Word32
 deleteQueue chan queueName = do
     (SimpleMethod (Queue_delete_ok msgCount)) <- request chan $ (SimpleMethod (Queue_delete
         1 -- ticket
@@ -282,7 +284,7 @@ deleteQueue chan queueName = do
     
 ----- MSG (the BASIC class in AMQP) -----    
 
-type ConsumerTag = String
+type ConsumerTag = Text
 
 -- | specifies whether you have to acknowledge messages that you receive from 'consumeMsgs' or 'getMsg'. If you use 'Ack', you have to call 'ackMsg' or 'ackEnv' after you have processed a message, otherwise it might be delivered again in the future
 data Ack = Ack | NoAck
@@ -295,10 +297,10 @@ ackToBool NoAck = True
 --
 -- NOTE: The callback will be run on the same thread as the channel thread (every channel spawns its own thread to listen for incoming data) so DO NOT perform any request on @chan@ inside the callback (however, you CAN perform requests on other open channels inside the callback, though I wouldn't recommend it).
 -- Functions that can safely be called on @chan@ are 'ackMsg', 'ackEnv', 'rejectMsg', 'recoverMsgs'. If you want to perform anything more complex, it's a good idea to wrap it inside 'forkIO'.
-consumeMsgs :: Channel -> String -> Ack -> ((Message,Envelope) -> IO ()) -> IO ConsumerTag 
+consumeMsgs :: Channel -> Text -> Ack -> ((Message,Envelope) -> IO ()) -> IO ConsumerTag
 consumeMsgs chan queueName ack callback = do
     --generate a new consumer tag
-    newConsumerTag <- (liftM show) $ modifyMVar (lastConsumerTag chan) $ \c -> return (c+1,c+1)
+    newConsumerTag <- (fmap (T.pack . show)) $ modifyMVar (lastConsumerTag chan) $ \c -> return (c+1,c+1)
     
     --register the consumer
     modifyMVar_ (consumers chan) $ \c -> return $ M.insert newConsumerTag callback c
@@ -329,7 +331,7 @@ cancelConsumer chan consumerTag = do
 -- | @publishMsg chan exchangeName routingKey msg@ publishes @msg@ to the exchange with the provided @exchangeName@. The effect of @routingKey@ depends on the type of the exchange
 -- 
 -- NOTE: This method may temporarily block if the AMQP server requested us to stop sending content data (using the flow control mechanism). So don't rely on this method returning immediately
-publishMsg :: Channel -> String -> String -> Message -> IO ()
+publishMsg :: Channel -> Text -> Text -> Message -> IO ()
 publishMsg chan exchangeName routingKey msg = do
     writeAssembly chan (ContentMethod (Basic_publish
             1 -- ticket; ignored by rabbitMQ
@@ -361,7 +363,7 @@ publishMsg chan exchangeName routingKey msg = do
     
 
 -- | @getMsg chan ack queueName@ gets a message from the specified queue. If @ack=='Ack'@, you have to call 'ackMsg' or 'ackEnv' for any message that you get, otherwise it might be delivered again in the future (by calling 'recoverMsgs')
-getMsg :: Channel -> Ack -> String -> IO (Maybe (Message, Envelope))
+getMsg :: Channel -> Ack -> Text -> IO (Maybe (Message, Envelope))
 getMsg chan ack queueName = do
     ret <- request chan (SimpleMethod (Basic_get
         1 -- ticket
@@ -464,8 +466,8 @@ data Envelope = Envelope
               {
                 envDeliveryTag :: LongLongInt,
                 envRedelivered :: Bool, 
-                envExchangeName :: String,
-                envRoutingKey :: String,
+                envExchangeName :: Text,
+                envRoutingKey :: Text,
                 envChannel :: Channel
               }
               
@@ -486,10 +488,10 @@ data Message = Message {
                 msgBody :: BL.ByteString, -- ^ the content of your message
                 msgDeliveryMode :: Maybe DeliveryMode, -- ^ see 'DeliveryMode'
                 msgTimestamp :: Maybe Timestamp, -- ^ use in any way you like; this doesn't affect the way the message is handled
-                msgID :: Maybe String, -- ^ use in any way you like; this doesn't affect the way the message is handled
-                msgContentType :: Maybe String,
-                msgReplyTo :: Maybe String,
-                msgCorrelationID :: Maybe String,
+                msgID :: Maybe Text, -- ^ use in any way you like; this doesn't affect the way the message is handled
+                msgContentType :: Maybe Text,
+                msgReplyTo :: Maybe Text,
+                msgCorrelationID :: Maybe Text,
                 msgHeaders :: Maybe FieldTable
                 }
     deriving Show
@@ -572,7 +574,7 @@ connectionReceiver conn = do
         
     
     forwardToChannel 0 (MethodPayload (Connection_close _ (ShortString errorMsg) _ _ )) = do
-        modifyMVar_ (connClosed conn) $ \x -> return $ Just errorMsg
+        modifyMVar_ (connClosed conn) $ \x -> return $ Just $ T.unpack errorMsg
  
         killThread =<< myThreadId
     
@@ -592,12 +594,12 @@ connectionReceiver conn = do
 -- You must call 'closeConnection' before your program exits to ensure that all published messages are received by the server.
 --
 -- NOTE: If the login name, password or virtual host are invalid, this method will throw a 'ConnectionClosedException'. The exception will not contain a reason why the connection was closed, so you'll have to find out yourself.
-openConnection :: String -> String -> String -> String -> IO Connection           
+openConnection :: String -> Text -> Text -> Text -> IO Connection
 openConnection host vhost loginName loginPassword =
   openConnection' host 5672 vhost loginName loginPassword
 
 -- | same as 'openConnection' but allows you to specify a non-default port-number as the 2nd parameter  
-openConnection' :: String -> PortNumber -> String -> String -> String -> IO Connection
+openConnection' :: String -> PortNumber -> Text -> Text -> Text -> IO Connection
 openConnection' host port vhost loginName loginPassword = do
     proto <- getProtocolNumber "tcp"
     sock <- socket AF_INET Stream proto
@@ -669,11 +671,11 @@ openConnection' host port vhost loginName loginPassword = do
     start_ok = (Frame 0 (MethodPayload (Connection_start_ok  (FieldTable (M.fromList []))
         (ShortString "AMQPLAIN") 
         --login has to be a table without first 4 bytes    
-        (LongString (drop 4 $ BL.unpack $ runPut $ put $ FieldTable (M.fromList [("LOGIN",FVString loginName), ("PASSWORD", FVString loginPassword)]))) 
+        (LongString (T.pack $ drop 4 $ BL.unpack $ runPut $ put $ FieldTable (M.fromList [("LOGIN",FVString loginName), ("PASSWORD", FVString loginPassword)]))) 
         (ShortString "en_US")) ))    
     open = (Frame 0 (MethodPayload (Connection_open 
         (ShortString vhost)  --virtual host
-        (ShortString "")   -- capabilities
+        (ShortString $ T.pack "")   -- capabilities
         True)))   --insist; True because we don't support redirect yet
 
         
@@ -776,7 +778,7 @@ data Channel = Channel {
                     
                     chanActive :: Lock, -- used for flow-control. if lock is closed, no content methods will be sent
                     chanClosed :: MVar (Maybe String),
-                    consumers :: MVar (M.Map String ((Message, Envelope) -> IO ())) -- who is consumer of a queue? (consumerTag => callback)
+                    consumers :: MVar (M.Map Text ((Message, Envelope) -> IO ())) -- who is consumer of a queue? (consumerTag => callback)
                 }
                 
 
@@ -870,7 +872,7 @@ closeChannel' c reason = do
             then do
                 killLock $ chanActive c
                 killOutstandingResponses $ outstandingResponses c
-                return $ Just $ maybe reason id x
+                return $ Just $ maybe (T.unpack reason) id x
             else return x
   where 
     killOutstandingResponses :: (MVar (Seq.Seq (MVar a))) -> IO ()

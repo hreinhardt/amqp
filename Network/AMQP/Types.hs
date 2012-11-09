@@ -28,6 +28,9 @@ import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BL
 import qualified Data.ByteString.Lazy.Internal as BL
 import qualified Data.Binary.Put as BPut
+import Data.Text (Text)
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import Control.Monad
 import qualified Data.Map as M
 import Data.Binary.IEEE754
@@ -59,28 +62,32 @@ type LongLongInt = Word64
 
 
 
-newtype ShortString = ShortString String
+newtype ShortString = ShortString Text
     deriving (Show, Ord, Eq)
 instance Binary ShortString where
     get = do
       len <- getWord8
       dat <- getByteString (fromIntegral len)
-      return $ ShortString $ BS.unpack dat
+      return $ ShortString $ T.decodeUtf8 dat
     put (ShortString x) = do
-        let s = BS.pack $ take 255 x
-        putWord8 $ fromIntegral (BS.length s)
-        putByteString s
+        let s = T.encodeUtf8 x
+        if BS.length s > 255
+            then error "cannot encode ShortString with length > 255"
+            else do
+                putWord8 $ fromIntegral (BS.length s)
+                putByteString s
     
-newtype LongString = LongString String
+newtype LongString = LongString Text
     deriving Show
 instance Binary LongString where
     get = do
       len <- getWord32be
       dat <- getByteString (fromIntegral len)
-      return $ LongString $ BS.unpack dat
+      return $ LongString $ T.decodeUtf8 dat
     put (LongString x) = do
-        putWord32be $ fromIntegral (length x)
-        putByteString (BS.pack x) 
+        let s = T.encodeUtf8 x
+        putWord32be $ fromIntegral (BS.length s)
+        putByteString s
 
 type Timestamp = Word64
 
@@ -88,8 +95,8 @@ type Timestamp = Word64
 
 --- field-table ---
 
--- | Keys must be shorter than 256 characters
-data FieldTable = FieldTable (M.Map String FieldValue)
+-- | Keys must be shorter than 256 bytes when encoded as UTF-8
+data FieldTable = FieldTable (M.Map Text FieldValue)
     deriving Show
 instance Binary FieldTable where
     get = do
@@ -120,7 +127,7 @@ data FieldValue = FVBool Bool
                 | FVFloat Float
                 | FVDouble Double
                 | FVDecimal DecimalValue
-                | FVString String
+                | FVString Text
                 | FVFieldArray [FieldValue]
                 | FVTimestamp Timestamp
                 | FVFieldTable FieldTable
