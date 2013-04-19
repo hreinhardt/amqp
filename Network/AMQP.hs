@@ -57,6 +57,7 @@ module Network.AMQP (
     -- * Channel
     Channel,
     openChannel,
+    qos,
     
     -- * Exchanges
     ExchangeOpts(..),
@@ -147,7 +148,6 @@ import Network.AMQP.Generated
 
 {-
 TODO:
-- basic.qos
 - handle basic.return
 - connection.secure
 - connection.redirect
@@ -413,6 +413,7 @@ recoverMsgs chan requeue =
     writeAssembly chan $ (SimpleMethod (Basic_recover
         requeue -- requeue
         ))
+
 
         
         
@@ -1017,7 +1018,20 @@ throwMostRelevantAMQPException chan = do
                 Nothing -> CE.throwIO $ ConnectionClosedException "unknown reason"
       
 
-
+-- | @qos chan prefetchSize prefetchCount@ limits the amount of data the server
+-- delivers before requiring acknowledgements. @prefetchSize@ specifies the
+-- number of bytes and @prefetchCount@ the number of messages. In both cases
+-- the value 0 means unlimited.
+--
+-- NOTE: RabbitMQ does not implement prefetchSize and will throw an exception if it doesn't equal 0.
+qos :: Channel -> Word32 -> Word16 -> IO ()
+qos chan prefetchSize prefetchCount = do
+    (SimpleMethod Basic_qos_ok) <- request chan (SimpleMethod (Basic_qos
+        prefetchSize
+        prefetchCount
+        False
+        ))
+    return ()
 
 ----------------------------- EXCEPTIONS ---------------------------
 
