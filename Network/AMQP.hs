@@ -601,11 +601,11 @@ openConnection host vhost loginName loginPassword =
 
 -- | same as 'openConnection' but allows you to specify a non-default port-number as the 2nd parameter  
 openConnection' :: String -> PortNumber -> Text -> Text -> Text -> IO Connection
-openConnection' host port vhost loginName loginPassword = do
+openConnection' host port vhost loginName loginPassword = withSocketsDo $ do
+    (addrInfo:_) <- getAddrInfo Nothing (Just host) (Just $ show $ fromEnum port)
     proto <- getProtocolNumber "tcp"
-    sock <- socket AF_INET Stream proto
-    addr <- inet_addr host
-    connect sock (SockAddrInet port addr)
+    sock <- socket (addrFamily addrInfo) Stream proto
+    connect sock (addrAddress addrInfo)
     NB.send sock $ toStrict $ BPut.runPut $ do
         BPut.putByteString $ BS.pack "AMQP"
         BPut.putWord8 1
