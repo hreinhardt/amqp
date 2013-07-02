@@ -837,7 +837,8 @@ channelReceiver chan = do
                     let env =  Envelope {envDeliveryTag = deliveryTag, envRedelivered = redelivered,
                                     envExchangeName = exchangeName, envRoutingKey = routingKey, envChannel = chan}
 
-                    subscriber (msg, env)
+                    CE.catch (subscriber (msg, env))
+                        (\(e::CE.SomeException) -> putStrLn $ "AMQP callback threw exception: "++show e)
                 Nothing ->
                     -- got a message, but have no registered subscriber; so drop it
                     return ()
