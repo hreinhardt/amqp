@@ -1,5 +1,5 @@
 Name:                amqp
-Version:             0.4
+Version:             0.4.1
 Synopsis:            Client library for AMQP servers (currently only RabbitMQ)
 Description:         Client library for AMQP servers (currently only RabbitMQ)
                      .
