@@ -170,6 +170,7 @@ data ExchangeOpts = ExchangeOpts
                     exchangeAutoDelete :: Bool, -- ^ (default 'False'); If set, the exchange is deleted when all queues have finished using it.
                     exchangeInternal :: Bool -- ^ (default 'False'); If set, the exchange may not be used directly by publishers, but only when bound to other exchanges. Internal exchanges are used to construct wiring that is not visible to applications.
                 }
+    deriving (Eq, Ord, Read, Show)
 
 -- | an 'ExchangeOpts' with defaults set; you must override at least the 'exchangeName' and 'exchangeType' fields. 
 newExchange :: ExchangeOpts                
@@ -217,6 +218,7 @@ data QueueOpts = QueueOpts
                 queueAutoDelete :: Bool, -- ^ (default 'False'); If set, the queue is deleted when all consumers have finished using it. Last consumer can be cancelled either explicitly or because its channel is closed. If there was no consumer ever on the queue, it won't be deleted.
                 queueHeaders :: FieldTable -- ^ (default empty): Headers to use when creating this queue, such as @x-message-ttl@ or @x-dead-letter-exchange@.
              }
+      deriving (Eq, Ord, Read, Show)
 
 -- | a 'QueueOpts' with defaults set; you should override at least 'queueName'.
 newQueue :: QueueOpts
@@ -289,6 +291,7 @@ type ConsumerTag = Text
 
 -- | specifies whether you have to acknowledge messages that you receive from 'consumeMsgs' or 'getMsg'. If you use 'Ack', you have to call 'ackMsg' or 'ackEnv' after you have processed a message, otherwise it might be delivered again in the future
 data Ack = Ack | NoAck
+  deriving (Eq, Ord, Read, Show)
 
 ackToBool :: Ack -> Bool
 ackToBool Ack = False
@@ -476,7 +479,7 @@ data Envelope = Envelope
 
 data DeliveryMode = Persistent -- ^ the message will survive server restarts (if the queue is durable)
                   | NonPersistent -- ^ the message may be lost after server restarts
-    deriving Show
+    deriving (Eq, Ord, Read, Show)
 
 deliveryModeToInt NonPersistent = 1
 deliveryModeToInt Persistent = 2   
@@ -496,7 +499,7 @@ data Message = Message {
                 msgCorrelationID :: Maybe Text,
                 msgHeaders :: Maybe FieldTable
                 }
-    deriving Show
+    deriving (Eq, Ord, Read, Show)
 
 -- | a 'Msg' with defaults set; you should override at least 'msgBody'
 newMsg :: Message    

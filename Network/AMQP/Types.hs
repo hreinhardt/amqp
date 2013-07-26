@@ -63,7 +63,7 @@ type LongLongInt = Word64
 
 
 newtype ShortString = ShortString Text
-    deriving (Show, Ord, Eq)
+    deriving (Eq, Ord, Read, Show)
 instance Binary ShortString where
     get = do
       len <- getWord8
@@ -78,7 +78,7 @@ instance Binary ShortString where
                 putByteString s
     
 newtype LongString = LongString Text
-    deriving Show
+    deriving (Eq, Ord, Read, Show)
 instance Binary LongString where
     get = do
       len <- getWord32be
@@ -97,7 +97,7 @@ type Timestamp = Word64
 
 -- | Keys must be shorter than 256 bytes when encoded as UTF-8
 data FieldTable = FieldTable (M.Map Text FieldValue)
-    deriving Show
+    deriving (Eq, Ord, Read, Show)
 instance Binary FieldTable where
     get = do
         len <- get :: Get LongInt --length of fieldValuePairs in bytes
@@ -133,7 +133,7 @@ data FieldValue = FVBool Bool
                 | FVFieldTable FieldTable
                 | FVVoid
                 | FVByteArray BS.ByteString
-    deriving Show
+    deriving (Eq, Ord, Read, Show)
                 
 instance Binary FieldValue where
     get = do
@@ -193,7 +193,7 @@ instance Binary FieldValue where
     
     
 data DecimalValue = DecimalValue Decimals LongInt    
-    deriving Show
+    deriving (Eq, Ord, Read, Show)
 instance Binary DecimalValue where   
     get = do
       a <- getWord8

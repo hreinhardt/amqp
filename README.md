@@ -6,6 +6,10 @@ Library for accessing RabbitMQ from Haskell. Please see the [Hackage docs](http:
 Changelog
 =========
 
+### Version 0.4.2
+
+* add (Read, Ord, Eq, Show) instances for most data-types
+
 ### Version 0.4.1
 
 * add queueHeaders field to QueueOpts
