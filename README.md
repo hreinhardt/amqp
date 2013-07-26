@@ -6,6 +6,10 @@ Library for accessing RabbitMQ from Haskell. Please see the [Hackage docs](http:
 Changelog
 =========
 
+### Version 0.4.1
+
+* add queueHeaders field to QueueOpts
+
 ### Version 0.4
 
 * Data.Text is now used instead of Strings. Using the _OverloadedStrings_ extension will make upgrading easier
