@@ -730,13 +730,12 @@ readFrameSock sock maxFrameSize = do
     dat <- recvExact 7
     let len = fromIntegral $ peekFrameSize dat
     dat' <- recvExact (len+1) -- +1 for the terminating 0xCE
-    let (frame, rest, consumedBytes) = runGetState get (BL.append dat dat') 0
-
-
-    if consumedBytes /= fromIntegral (len+8)
-        then error $ "readFrameSock: parser should read "++show (len+8)++" bytes; but read "++show consumedBytes
-        else return ()
-    return frame
+    let ret = runGetOrFail get (BL.append dat dat')
+    case ret of
+        Left (rest, consumedBytes, errMsg) -> error $ "readFrameSock fail: "++errMsg
+        Right (rest, consumedBytes, frame) | consumedBytes /= fromIntegral (len+8) -> 
+            error $ "readFrameSock: parser should read "++show (len+8)++" bytes; but read "++show consumedBytes
+        Right (rest, consumedBytes, frame) -> return frame
 
   where
     recvExact bytes = do

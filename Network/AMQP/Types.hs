@@ -42,8 +42,8 @@ readMany str = runGet (readMany' [] 0) str
 readMany' _ 1000 = error "readMany overflow"
 readMany' acc overflow = do
     x <- get
-    rem <- remaining
-    if rem > 0 
+    emp <- isEmpty
+    if not emp
         then readMany' (x:acc) (overflow+1)
         else return (x:acc)
         
