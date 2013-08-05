@@ -127,7 +127,7 @@ import Data.Text (Text)
 import Data.IORef
 import Data.Maybe
 import Data.Int
-
+import System.IO
 
 import Control.Concurrent
 import Control.Monad
@@ -135,8 +135,7 @@ import qualified Control.Exception as CE
 
 
 import Network.BSD
-import Network.Socket 
-import qualified Network.Socket.ByteString as NB
+import Network
 
 
 import Network.AMQP.Protocol
@@ -554,7 +553,7 @@ Outgoing Data: Application -> Socket
 -}
 
 data Connection = Connection {
-                    connSocket :: Socket,
+                    connHandle :: Handle,
                     connChannels :: (MVar (IM.IntMap (Channel, ThreadId))), --open channels (channelID => (Channel, ChannelThread))
                     connMaxFrameSize :: Int, --negotiated maximum frame size
                     connClosed :: MVar (Maybe String),
@@ -568,7 +567,7 @@ data Connection = Connection {
 -- | reads incoming frames from socket and forwards them to the opened channels        
 connectionReceiver :: Connection -> IO ()
 connectionReceiver conn = do
-    (Frame chanID payload) <- readFrameSock (connSocket conn) (connMaxFrameSize conn)
+    Frame chanID payload <- readFrame (connHandle conn)
     forwardToChannel chanID payload
     connectionReceiver conn
   where
@@ -606,11 +605,8 @@ openConnection host vhost loginName loginPassword =
 -- | same as 'openConnection' but allows you to specify a non-default port-number as the 2nd parameter  
 openConnection' :: String -> PortNumber -> Text -> Text -> Text -> IO Connection
 openConnection' host port vhost loginName loginPassword = withSocketsDo $ do
-    (addrInfo:_) <- getAddrInfo Nothing (Just host) (Just $ show $ fromEnum port)
-    proto <- getProtocolNumber "tcp"
-    sock <- socket (addrFamily addrInfo) Stream proto
-    connect sock (addrAddress addrInfo)
-    NB.send sock $ toStrict $ BPut.runPut $ do
+    handle <- connectTo host $ PortNumber port
+    BL.hPut handle $ BPut.runPut $ do
         BPut.putByteString $ BS.pack "AMQP"
         BPut.putWord8 1
         BPut.putWord8 1 --TCP/IP
@@ -619,24 +615,24 @@ openConnection' host port vhost loginName loginPassword = withSocketsDo $ do
         
     
     -- S: connection.start
-    Frame 0 (MethodPayload (Connection_start version_major version_minor server_properties mechanisms locales)) <- readFrameSock sock 4096
+    Frame 0 (MethodPayload (Connection_start version_major version_minor server_properties mechanisms locales)) <- readFrame handle
 
     -- C: start_ok
-    writeFrameSock sock start_ok
+    writeFrame handle start_ok
     -- S: tune
-    Frame 0 (MethodPayload (Connection_tune channel_max frame_max heartbeat)) <- readFrameSock sock 4096
+    Frame 0 (MethodPayload (Connection_tune channel_max frame_max heartbeat)) <- readFrame handle
     -- C: tune_ok
     let maxFrameSize = (min 131072 frame_max)
 
-    writeFrameSock sock (Frame 0 (MethodPayload 
+    writeFrame handle (Frame 0 (MethodPayload 
         --TODO: handle channel_max
         (Connection_tune_ok 0 maxFrameSize 0)
         ))  
     -- C: open
-    writeFrameSock sock open
+    writeFrame handle open
     
     -- S: open_ok
-    Frame 0 (MethodPayload (Connection_open_ok _)) <- readFrameSock sock $ fromIntegral maxFrameSize
+    Frame 0 (MethodPayload (Connection_open_ok _)) <- readFrame handle
 
     -- Connection established!    
 
@@ -647,13 +643,13 @@ openConnection' host port vhost loginName loginPassword = withSocketsDo $ do
     writeLock <- newMVar ()
     ccl <- newEmptyMVar
     connClosedHandlers <- newMVar []
-    let conn = Connection sock connChannels (fromIntegral maxFrameSize) cClosed ccl writeLock connClosedHandlers lastChanID
+    let conn = Connection handle connChannels (fromIntegral maxFrameSize) cClosed ccl writeLock connClosedHandlers lastChanID
     
     --spawn the connectionReceiver
     forkIO $ CE.finally (connectionReceiver conn) 
             (do 
                 -- try closing socket
-                CE.catch (sClose sock) (\(e::CE.SomeException) -> return ())
+                CE.catch (hClose handle) (\(e::CE.SomeException) -> return ())
                 
                 -- mark as closed
                 modifyMVar_ cClosed $ \x -> return $ Just $ maybe "closed" id x
@@ -692,7 +688,7 @@ openConnection' host port vhost loginName loginPassword = withSocketsDo $ do
 closeConnection :: Connection -> IO ()
 closeConnection c = do
     CE.catch (
-        withMVar (connWriteLock c) $ \_ -> writeFrameSock (connSocket c) $ (Frame 0 (MethodPayload (Connection_close
+        withMVar (connWriteLock c) $ \_ -> writeFrame (connHandle c) $ (Frame 0 (MethodPayload (Connection_close
             --TODO: set these values
             0 -- reply_code
             (ShortString "") -- reply_text
@@ -725,48 +721,26 @@ addConnectionClosedHandler conn ifClosed handler = do
     
 
     
-readFrameSock :: Socket -> Int -> IO Frame
-readFrameSock sock maxFrameSize = do
-    dat <- recvExact 7
+readFrame :: Handle -> IO Frame
+readFrame handle = do
+    dat <- BL.hGet handle 7
     let len = fromIntegral $ peekFrameSize dat
-    dat' <- recvExact (len+1) -- +1 for the terminating 0xCE
+    dat' <- BL.hGet handle (len+1) -- +1 for the terminating 0xCE
     let ret = runGetOrFail get (BL.append dat dat')
     case ret of
-        Left (rest, consumedBytes, errMsg) -> error $ "readFrameSock fail: "++errMsg
+        Left (rest, consumedBytes, errMsg) -> error $ "readFrame fail: "++errMsg
         Right (rest, consumedBytes, frame) | consumedBytes /= fromIntegral (len+8) -> 
-            error $ "readFrameSock: parser should read "++show (len+8)++" bytes; but read "++show consumedBytes
+            error $ "readFrame: parser should read "++show (len+8)++" bytes; but read "++show consumedBytes
         Right (rest, consumedBytes, frame) -> return frame
 
-  where
-    recvExact bytes = do
-        b <- recvExact' bytes $ BL.empty
-        if BL.length b /= fromIntegral bytes
-            then error $ "recvExact wanted "++show bytes++" bytes; got "++show (fromIntegral $ BL.length b)++" bytes"
-            else return b
-    recvExact' bytes buf = do
-        dat <- NB.recv sock bytes
-        let len = BS.length dat
-        if len == 0
-            then CE.throwIO $ ConnectionClosedException "recv returned 0 bytes"
-            else do
-                let buf' = BL.append buf (toLazy dat)
-                if len >= bytes
-                    then return buf'
-                    else recvExact' (bytes-len) buf'
 
 
 
 
 
-writeFrameSock :: Socket -> Frame -> IO ()
-writeFrameSock sock x = do
-    f $ toStrict $ runPut $ put x
-  where
-    f x | BS.length x == 0 = return ()
-    f x = do
-        sent <- NB.send sock x
-        f $ BS.drop sent x
-
+writeFrame :: Handle -> Frame -> IO ()
+writeFrame handle x = do
+    BL.hPut handle $ runPut $ put x
 
 
 ------------------------ CHANNEL -----------------------------
@@ -930,7 +904,7 @@ writeFrames chan payloads =
                     CE.catch 
                         -- ensure at most one thread is writing to the socket at any time
                         (withMVar (connWriteLock conn) $ \_ -> 
-                            mapM_ (\payload -> writeFrameSock (connSocket conn) (Frame (channelID chan) payload)) payloads)
+                            mapM_ (\payload -> writeFrame (connHandle conn) (Frame (channelID chan) payload)) payloads)
                         ( \(e :: CE.IOException) -> do
                             CE.throwIO $ userError "connection not open"
                         )
