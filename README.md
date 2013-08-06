@@ -6,6 +6,11 @@ Library for accessing RabbitMQ from Haskell. Please see the [Hackage docs](http:
 Changelog
 =========
 
+### Version 0.4.3
+
+* use Handles instead of sockets 
+* fix deprecation warnings from Data.Binary
+
 ### Version 0.4.2
 
 * add (Read, Ord, Eq, Show) instances for most data-types
