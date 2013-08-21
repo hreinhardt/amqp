@@ -221,8 +221,7 @@ declareQueue chan queue = do
 
 -- | @bindQueue chan queue exchange routingKey@ binds the queue to the exchange using the provided routing key
 bindQueue :: Channel -> Text -> Text -> Text -> IO ()
-bindQueue chan queue exchange routingKey = do
-    bindQueue' chan queue exchange routingKey (FieldTable (M.fromList []))
+bindQueue chan queue exchange routingKey = bindQueue' chan queue exchange routingKey (FieldTable (M.fromList []))
 
 -- | an extended version of @bindQueue@ that allows you to include arbitrary arguments. This is useful to use the @headers@ exchange-type.
 bindQueue' :: Channel -> Text -> Text -> Text -> FieldTable -> IO ()
@@ -641,7 +640,7 @@ closeConnection c = do
             0 -- method_id
             )))
             )
-        (\ (_ :: CE.IOException) -> do
+        (\ (_ :: CE.IOException) ->
             --do nothing if connection is already closed
             return ()
         )
@@ -653,7 +652,7 @@ closeConnection c = do
 -- | @addConnectionClosedHandler conn ifClosed handler@ adds a @handler@ that will be called after the connection is closed (either by calling @closeConnection@ or by an exception). If the @ifClosed@ parameter is True and the connection is already closed, the handler will be called immediately. If @ifClosed == False@ and the connection is already closed, the handler will never be called
 addConnectionClosedHandler :: Connection -> Bool -> IO () -> IO ()
 addConnectionClosedHandler conn ifClosed handler = do
-    withMVar (connClosed conn) $ \cc -> do
+    withMVar (connClosed conn) $ \cc ->
         case cc of
             -- connection is already closed, so call the handler directly
             Just _ | ifClosed == True -> handler
@@ -849,8 +848,7 @@ writeAssembly' chan (ContentMethod m properties msg) = do
   where
     splitLen str len | BL.length str > len = (BL.take len str):(splitLen (BL.drop len str) len)
     splitLen str _ = [str]
-writeAssembly' chan (SimpleMethod m) = do
-    writeFrames chan [MethodPayload m]
+writeAssembly' chan (SimpleMethod m) = writeFrames chan [MethodPayload m]
 
 -- most exported functions in this module will use either 'writeAssembly' or 'request' to talk to the server
 -- so we perform the exception handling here

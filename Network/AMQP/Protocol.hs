@@ -73,12 +73,10 @@ getPayload 3 payloadSize = do --content body frame
 getPayload n _ = error ("Unknown frame payload: " ++ show n)
 
 putPayload :: FramePayload -> Put
-putPayload (MethodPayload payload) = do
-    put payload
+putPayload (MethodPayload payload) = put payload
 putPayload (ContentHeaderPayload classID weight bodySize p) = do
     put classID
     put weight
     put bodySize
     putContentHeaderProperties p
-putPayload (ContentBodyPayload payload) = do
-    putLazyByteString payload
+putPayload (ContentBodyPayload payload) = putLazyByteString payload
