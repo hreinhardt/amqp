@@ -37,7 +37,7 @@
 -- >
 -- >myCallback :: (Message,Envelope) -> IO ()
 -- >myCallback (msg, env) = do
--- >    putStrLn $ "received message: "++(BL.unpack $ msgBody msg)
+-- >    putStrLn $ "received message: " ++ (BL.unpack $ msgBody msg)
 -- >    -- acknowledge receiving the message
 -- >    ackEnv env
 --
@@ -485,7 +485,7 @@ readAssembly chan = do
                     return $ ContentMethod p props msg
                 else do
                     return $ SimpleMethod p
-        x -> error $ "didn't expect frame: "++(show x)
+        x -> error $ "didn't expect frame: " ++ show x
 
 -- | reads a contentheader and contentbodies and assembles them
 collectContent :: Chan FramePayload -> IO (ContentHeaderProperties, BL.ByteString)
@@ -536,13 +536,13 @@ connectionReceiver conn = do
     forwardToChannel 0 (MethodPayload (Connection_close _ (ShortString errorMsg) _ _ )) = do
         modifyMVar_ (connClosed conn) $ const $ return $ Just $ T.unpack errorMsg
         killThread =<< myThreadId
-    forwardToChannel 0 payload = print $ "Got unexpected msg on channel zero: "++(show payload)
+    forwardToChannel 0 payload = print $ "Got unexpected msg on channel zero: " ++ show payload
     forwardToChannel chanID payload = do
         --got asynchronous msg => forward to registered channel
         withMVar (connChannels conn) $ \cs -> do
             case IM.lookup (fromIntegral chanID) cs of
                 Just c -> writeChan (inQueue $ fst c) payload
-                Nothing -> print $ "ERROR: channel not open "++(show chanID)
+                Nothing -> print $ "ERROR: channel not open " ++ show chanID
 
 -- | @openConnection hostname virtualHost loginName loginPassword@ opens a connection to an AMQP server running on @hostname@.
 -- @virtualHost@ is used as a namespace for AMQP resources (default is \"/\"), so different applications could use multiple virtual hosts on the same AMQP server.
@@ -667,9 +667,9 @@ readFrame handle = do
     dat' <- BL.hGet handle (len+1) -- +1 for the terminating 0xCE
     let ret = runGetOrFail get (BL.append dat dat')
     case ret of
-        Left (_, _, errMsg) -> error $ "readFrame fail: "++errMsg
+        Left (_, _, errMsg) -> error $ "readFrame fail: " ++ errMsg
         Right (_, consumedBytes, _) | consumedBytes /= fromIntegral (len+8) ->
-            error $ "readFrame: parser should read "++show (len+8)++" bytes; but read "++show consumedBytes
+            error $ "readFrame: parser should read " ++ show (len+8) ++ " bytes; but read " ++ show consumedBytes
         Right (_, _, frame) -> return frame
 
 writeFrame :: Handle -> Frame -> IO ()
@@ -737,11 +737,11 @@ channelReceiver chan = do
             case M.lookup consumerTag s of
                 Just subscriber -> do
                     let msg = msgFromContentHeaderProperties properties body
-                    let env =  Envelope {envDeliveryTag = deliveryTag, envRedelivered = redelivered,
+                    let env = Envelope {envDeliveryTag = deliveryTag, envRedelivered = redelivered,
                                     envExchangeName = exchange, envRoutingKey = routingKey, envChannel = chan}
 
                     CE.catch (subscriber (msg, env))
-                        (\(e::CE.SomeException) -> putStrLn $ "AMQP callback threw exception: "++show e)
+                        (\(e::CE.SomeException) -> putStrLn $ "AMQP callback threw exception: " ++ show e)
                 Nothing ->
                     -- got a message, but have no registered subscriber; so drop it
                     return ()
@@ -795,7 +795,7 @@ openChannel c = do
     conss <- newMVar M.empty
 
     --get a new unused channelID
-    newChannelID <- modifyMVar (lastChannelID c) $ \x -> return (x+1,x+1)
+    newChannelID <- modifyMVar (lastChannelID c) $ \x -> return (x+1, x+1)
 
     let newChannel = Channel c newInQueue outRes (fromIntegral newChannelID) lastConsTag ca closed conss
 
