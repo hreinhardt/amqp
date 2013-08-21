@@ -16,10 +16,7 @@ toLazy = BL.fromChunks . return
 data Lock = Lock (MVar Bool) (MVar ())
 
 newLock :: IO Lock
-newLock = do
-    a <- newMVar False
-    b <- newMVar ()
-    return $ Lock a b
+newLock = liftM2 Lock (newMVar False) (newMVar ())
 
 openLock :: Lock -> IO ()
 openLock (Lock _ b) = void $ tryPutMVar b ()
