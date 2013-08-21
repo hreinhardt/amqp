@@ -7,10 +7,10 @@ import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BL
 
 toStrict :: BL.ByteString -> BS.ByteString
-toStrict x = BS.concat $ BL.toChunks x
+toStrict = BS.concat . BL.toChunks
 
 toLazy :: BS.ByteString -> BL.ByteString
-toLazy x = BL.fromChunks [x]
+toLazy = BL.fromChunks . return
 
 -- if the lock is open, calls to waitLock will immediately return. if it is closed, calls to waitLock will block. if the lock is killed, it will always be open and can't be closed anymore
 data Lock = Lock (MVar Bool) (MVar ())

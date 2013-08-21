@@ -76,7 +76,7 @@ main = do
         "--Bits need special handling because AMQP requires contiguous bits to be packed into a Word8\n"++
         "-- | Packs up to 8 bits into a Word8\n"++
         "putBits :: [Bit] -> Put\n"++
-        "putBits xs = putWord8 $ putBits' 0 xs\n"++
+        "putBits = putWord8 . putBits' 0\n"++
 
         "putBits' :: Int -> [Bit] -> Word8\n" ++
         "putBits' _ [] = 0\n"++
@@ -85,7 +85,7 @@ main = do
         "          toInt False = 0\n"++
 
         "getBits :: Int -> Get [Bit]\n" ++
-        "getBits num = getWord8 >>= \\x -> return $ getBits' num 0 x\n"++
+        "getBits num = getWord8 >>= return . getBits' num 0\n"++
 
         "getBits' :: Int -> Int -> Word8 -> [Bit]\n" ++
         "getBits' 0 _ _ = []\n" ++
@@ -93,7 +93,7 @@ main = do
 
         "-- | Packs up to 15 Bits into a Word16 (=Property Flags) \n"++
         "putPropBits :: [Bit] -> Put\n" ++
-        "putPropBits xs = putWord16be $ (putPropBits' 0 xs) \n"++
+        "putPropBits = putWord16be . putPropBits' 0\n"++
 
         "putPropBits' :: Int -> [Bit] -> Word16\n" ++
         "putPropBits' _ [] = 0\n"++
@@ -102,7 +102,7 @@ main = do
         "          toInt False = 0\n"++
 
         "getPropBits :: Int -> Get [Bit]\n" ++
-        "getPropBits num = getWord16be >>= \\x -> return $ getPropBits' num 0  x \n"++
+        "getPropBits num = getWord16be >>= return . getPropBits' num 0\n"++
 
         "getPropBits' :: Int -> Int -> Word16 -> [Bit]\n" ++
         "getPropBits' 0 _ _ = []\n"++
@@ -110,7 +110,7 @@ main = do
 
         "condGet :: Binary a => Bool -> Get (Maybe a)\n" ++
         "condGet False = return Nothing\n"++
-        "condGet True = get >>= \\x -> return $ Just x\n\n"++
+        "condGet True = get >>= return . Just\n\n"++
 
         "condPut :: Binary a => Maybe a -> Put\n" ++
         "condPut (Just x) = put x\n"++

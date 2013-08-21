@@ -39,7 +39,7 @@ instance Binary Frame where
 -- gets the size of the frame
 -- the bytestring should be at least 7 bytes long, otherwise this method will fail
 peekFrameSize :: BL.ByteString -> PayloadSize
-peekFrameSize b = runGet f b
+peekFrameSize = runGet f
   where
     f = do
       void $ getWord8 -- 1 byte

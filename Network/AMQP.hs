@@ -281,7 +281,7 @@ consumeMsgs chan queue ack callback = do
     newConsumerTag <- (fmap (T.pack . show)) $ modifyMVar (lastConsumerTag chan) $ \c -> return (c+1,c+1)
 
     --register the consumer
-    modifyMVar_ (consumers chan) $ \c -> return $ M.insert newConsumerTag callback c
+    modifyMVar_ (consumers chan) $ return . M.insert newConsumerTag callback
 
     writeAssembly chan (SimpleMethod $ Basic_consume
         1 -- ticket
@@ -303,7 +303,7 @@ cancelConsumer chan consumerTag = do
         ))
 
     --unregister the consumer
-    modifyMVar_ (consumers chan) $ \c -> return $ M.delete consumerTag c
+    modifyMVar_ (consumers chan) $ return . M.delete consumerTag
 
 -- | @publishMsg chan exchange routingKey msg@ publishes @msg@ to the exchange with the provided @exchange@. The effect of @routingKey@ depends on the type of the exchange
 --
@@ -552,8 +552,7 @@ connectionReceiver conn = do
 --
 -- NOTE: If the login name, password or virtual host are invalid, this method will throw a 'ConnectionClosedException'. The exception will not contain a reason why the connection was closed, so you'll have to find out yourself.
 openConnection :: String -> Text -> Text -> Text -> IO Connection
-openConnection host vhost loginName loginPassword =
-  openConnection' host 5672 vhost loginName loginPassword
+openConnection host = openConnection' host 5672
 
 -- | same as 'openConnection' but allows you to specify a non-default port-number as the 2nd parameter
 openConnection' :: String -> PortNumber -> Text -> Text -> Text -> IO Connection
@@ -604,10 +603,10 @@ openConnection' host port vhost loginName loginPassword = withSocketsDo $ do
                 CE.catch (hClose handle) (\(_ :: CE.SomeException) -> return ())
 
                 -- mark as closed
-                modifyMVar_ cClosed $ \x -> return $ Just $ maybe "closed" id x
+                modifyMVar_ cClosed $ return . Just . maybe "closed" id
 
                 --kill all channel-threads
-                void $ withMVar cChannels $ \cc -> mapM_ (\c -> killThread $ snd c) $ IM.elems cc
+                void $ withMVar cChannels $ mapM_ (\c -> killThread $ snd c) . IM.elems
                 void $ withMVar cChannels $ \_ -> return $ IM.empty
 
                 -- mark connection as closed, so all pending calls to 'closeConnection' can now return
@@ -675,8 +674,7 @@ readFrame handle = do
         Right (_, _, frame) -> return frame
 
 writeFrame :: Handle -> Frame -> IO ()
-writeFrame handle x = do
-    BL.hPut handle $ runPut $ put x
+writeFrame handle = BL.hPut handle . runPut . put
 
 ------------------------ CHANNEL -----------------------------
 
@@ -806,7 +804,7 @@ openChannel c = do
         (closeChannel' newChannel "closed")
 
     --add new channel to connection's channel map
-    modifyMVar_ (connChannels c) (\oldMap -> return $ IM.insert newChannelID (newChannel, thrID) oldMap)
+    modifyMVar_ (connChannels c) (return . IM.insert newChannelID (newChannel, thrID))
 
     (SimpleMethod Channel_open_ok) <- request newChannel (SimpleMethod (Channel_open (ShortString "")))
     return newChannel

@@ -32,7 +32,7 @@ import qualified Data.Text.Encoding as T
 
 -- performs runGet on a bytestring until the string is empty
 readMany :: (Show a, Binary a) => BL.ByteString -> [a]
-readMany str = runGet (readMany' [] 0) str
+readMany = runGet (readMany' [] 0)
 
 readMany' :: (Show a, Binary a) => [a] -> Int -> Get [a]
 readMany' _ 1000 = error "readMany overflow"
@@ -44,7 +44,7 @@ readMany' acc overflow = do
         else return (x:acc)
 
 putMany :: Binary a => [a] -> PutM ()
-putMany x = mapM_ put x
+putMany = mapM_ put
 
 -- Lowlevel Types
 type Octet = Word8

@@ -110,33 +110,33 @@ data ContentHeaderProperties =
 --Bits need special handling because AMQP requires contiguous bits to be packed into a Word8
 -- | Packs up to 8 bits into a Word8
 putBits :: [Bit] -> Put
-putBits xs = putWord8 $ putBits' 0 xs
+putBits = putWord8 . putBits' 0
 putBits' :: Int -> [Bit] -> Word8
 putBits' _ [] = 0
 putBits' offset (x:xs) = (shiftL (toInt x) offset) .|. (putBits' (offset+1) xs)
     where toInt True = 1
           toInt False = 0
 getBits :: Int -> Get [Bit]
-getBits num = getWord8 >>= \x -> return $ getBits' num 0 x
+getBits num = getWord8 >>= return . getBits' num 0
 getBits' :: Int -> Int -> Word8 -> [Bit]
 getBits' 0 _ _ = []
 getBits' num offset x = ((x .&. (2^offset)) /= 0) : (getBits' (num-1) (offset+1) x)
 -- | Packs up to 15 Bits into a Word16 (=Property Flags) 
 putPropBits :: [Bit] -> Put
-putPropBits xs = putWord16be $ (putPropBits' 0 xs) 
+putPropBits = putWord16be . putPropBits' 0
 putPropBits' :: Int -> [Bit] -> Word16
 putPropBits' _ [] = 0
 putPropBits' offset (x:xs) = (shiftL (toInt x) (15-offset)) .|. (putPropBits' (offset+1) xs)
     where toInt True = 1
           toInt False = 0
 getPropBits :: Int -> Get [Bit]
-getPropBits num = getWord16be >>= \x -> return $ getPropBits' num 0 x
+getPropBits num = getWord16be >>= return . getPropBits' num 0
 getPropBits' :: Int -> Int -> Word16 -> [Bit]
 getPropBits' 0 _ _ = []
 getPropBits' num offset x = ((x .&. (2^(15-offset))) /= 0) : (getPropBits' (num-1) (offset+1) x)
 condGet :: Binary a => Bool -> Get (Maybe a)
 condGet False = return Nothing
-condGet True = get >>= \x -> return $ Just x
+condGet True = get >>= return . Just
 
 condPut :: Binary a => Maybe a -> Put
 condPut (Just x) = put x
