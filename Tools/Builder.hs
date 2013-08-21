@@ -2,13 +2,13 @@
 --reads the AMQP xml spec file and builds the "Generated.hs" module
 --this is pretty much a BIG HACK
 
+import Data.Char
+import Data.Maybe
+
 import Text.XML.Light
 
 import qualified Data.Map as M
 import qualified Data.List as L
-
-import Data.Char
-import Data.Maybe
 
 data Class = Class String Int [Method] [Field] --className, classID, methods, content-fields
     deriving Show
@@ -52,12 +52,12 @@ main = do
 
     writeFile "Generated.hs" (
         "module Network.AMQP.Generated where\n\n"++
-        "import Network.AMQP.Types\n"++
-        "import Data.Maybe\n"++
         "import Data.Binary\n"++
         "import Data.Binary.Get\n"++
         "import Data.Binary.Put\n"++
-        "import Data.Bits\n\n"++
+        "import Data.Bits\n"++
+        "import Data.Maybe\n"++
+        "import Network.AMQP.Types\n\n"++
 
         "getContentHeaderProperties :: ShortInt -> Get ContentHeaderProperties" ++ "\n" ++
         contentHeadersGetInst++"\n"++

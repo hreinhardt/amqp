@@ -17,18 +17,19 @@ module Network.AMQP.Types
      )
      where
 
+import Control.Applicative
 import Data.Int
-import Data.Char
 import Data.Binary
 import Data.Binary.Get
+import Data.Binary.IEEE754
 import Data.Binary.Put
-import Control.Applicative
+import Data.Char
+import Data.Text (Text)
+
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BL
-import Data.Text (Text)
-import qualified Data.Text.Encoding as T
 import qualified Data.Map as M
-import Data.Binary.IEEE754
+import qualified Data.Text.Encoding as T
 
 -- performs runGet on a bytestring until the string is empty
 readMany :: (Show t, Binary t) => BL.ByteString -> [t]

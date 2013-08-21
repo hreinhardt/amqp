@@ -102,26 +102,25 @@ module Network.AMQP (
     AMQPException(..)
 ) where
 
+import Control.Concurrent
+import Control.Monad
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put as BPut
-import Data.Typeable
-import qualified Data.Map as M
-import qualified Data.IntMap as IM
-import qualified Data.ByteString.Char8 as BS
-import qualified Data.ByteString.Lazy.Char8 as BL
-import qualified Data.Sequence as Seq
-import qualified Data.Foldable as F
-import qualified Data.Text as T
-import Data.Text (Text)
 import Data.Maybe
+import Data.Text (Text)
+import Data.Typeable
+import Network
 import System.IO
 
-import Control.Concurrent
-import Control.Monad
 import qualified Control.Exception as CE
-
-import Network
+import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy.Char8 as BL
+import qualified Data.Map as M
+import qualified Data.Foldable as F
+import qualified Data.IntMap as IM
+import qualified Data.Sequence as Seq
+import qualified Data.Text as T
 
 import Network.AMQP.Protocol
 import Network.AMQP.Types

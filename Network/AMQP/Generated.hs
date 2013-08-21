@@ -1,11 +1,11 @@
 module Network.AMQP.Generated where
 
-import Network.AMQP.Types
-import Data.Maybe
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
 import Data.Bits
+import Data.Maybe
+import Network.AMQP.Types
 
 getContentHeaderProperties :: ShortInt -> Get ContentHeaderProperties
 getContentHeaderProperties 10 = getPropBits 0 >>= \[] ->  return CHConnection 
