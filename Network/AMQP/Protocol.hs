@@ -44,8 +44,7 @@ peekFrameSize = runGet f
     f = do
       void $ getWord8 -- 1 byte
       void $ (get :: Get ChannelID) -- 2 bytes
-      ps <- get :: Get PayloadSize -- 4 bytes
-      return ps
+      get :: Get PayloadSize -- 4 bytes
 
 data FramePayload =
                MethodPayload MethodPayload
