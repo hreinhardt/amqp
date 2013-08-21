@@ -1,22 +1,18 @@
 module Network.AMQP.Protocol where
 
-
+import Control.Monad
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put
 
 import qualified Data.ByteString.Lazy.Char8 as BL
-import qualified Data.Binary.Put as BPut
-import Control.Monad
-
-import Data.Char
-import Data.Int
 
 import Network.AMQP.Types
 import Network.AMQP.Generated
 
 
---True if a content (contentheader and possibly contentbody) will follow the method        
+--True if a content (contentheader and possibly contentbody) will follow the method
+hasContent :: FramePayload -> Bool
 hasContent (MethodPayload (Basic_get_ok _ _ _ _ _)) = True
 hasContent (MethodPayload (Basic_deliver _ _ _ _ _)) = True
 hasContent (MethodPayload (Basic_return _ _ _ _)) = True
@@ -27,12 +23,12 @@ data Frame = Frame ChannelID FramePayload --channel, payload
     deriving Show
 instance Binary Frame where
     get = do
-        frameType <- getWord8
+        fType <- getWord8
         channel <- get :: Get ChannelID
-        payloadSize <- get :: Get PayloadSize 
-        payload <- getPayload frameType payloadSize :: Get FramePayload
+        payloadSize <- get :: Get PayloadSize
+        payload <- getPayload fType payloadSize :: Get FramePayload
         0xCE <- getWord8 --frame end
-        return $ Frame channel payload  
+        return $ Frame channel payload
     put (Frame chan payload) = do
         putWord8 $ frameType payload
         put chan
@@ -48,8 +44,8 @@ peekFrameSize :: BL.ByteString -> PayloadSize
 peekFrameSize b = runGet f b
   where
     f = do
-        getWord8 -- 1 byte
-        get :: Get ChannelID -- 2 bytes
+        void $ getWord8 -- 1 byte
+        void $ (get :: Get ChannelID) -- 2 bytes
         ps <- get :: Get PayloadSize -- 4 bytes
         return ps
     
@@ -59,16 +55,18 @@ data FramePayload =
              | ContentHeaderPayload ShortInt ShortInt LongLongInt ContentHeaderProperties --classID, weight, bodySize, propertyFields
              | ContentBodyPayload BL.ByteString
     deriving Show
-    
-frameType (MethodPayload _) = 1    
+
+frameType :: FramePayload -> Word8
+frameType (MethodPayload _) = 1
 frameType (ContentHeaderPayload _ _ _ _) = 2
 frameType (ContentBodyPayload _) = 3
-    
-getPayload 1 payloadSize = do --METHOD FRAME
+
+getPayload :: Word8 -> PayloadSize -> Get FramePayload
+getPayload 1 _ = do --METHOD FRAME
     payLoad <- get :: Get MethodPayload
     return (MethodPayload payLoad)
-    
-getPayload 2 payloadSize = do --content header frame
+
+getPayload 2 _ = do --content header frame
     classID <- get :: Get ShortInt
     weight <- get :: Get ShortInt
     bodySize <- get :: Get LongLongInt
@@ -79,7 +77,9 @@ getPayload 2 payloadSize = do --content header frame
 getPayload 3 payloadSize = do --content body frame
     payload <- getLazyByteString $ fromIntegral payloadSize
     return (ContentBodyPayload payload)
-    
+getPayload n _ = error ("Unknown frame payload: " ++ show n)
+
+putPayload :: FramePayload -> Put
 putPayload (MethodPayload payload) = do
     put payload
       

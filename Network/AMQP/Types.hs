@@ -26,12 +26,8 @@ import Data.Binary.Put
 import Control.Applicative
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BL
-import qualified Data.ByteString.Lazy.Internal as BL
-import qualified Data.Binary.Put as BPut
 import Data.Text (Text)
-import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
-import Control.Monad
 import qualified Data.Map as M
 import Data.Binary.IEEE754
 
@@ -39,6 +35,8 @@ import Data.Binary.IEEE754
 -- performs runGet on a bytestring until the string is empty
 readMany :: (Show t, Binary t) => BL.ByteString -> [t]
 readMany str = runGet (readMany' [] 0) str
+
+readMany' :: (Show t, Binary t) => [t] -> Int -> Get [t]
 readMany' _ 1000 = error "readMany overflow"
 readMany' acc overflow = do
     x <- get
@@ -46,7 +44,8 @@ readMany' acc overflow = do
     if not emp
         then readMany' (x:acc) (overflow+1)
         else return (x:acc)
-        
+
+putMany :: Binary a => [a] -> PutM ()
 putMany x = mapM_ put x
 
 -- Lowlevel Types
@@ -164,6 +163,7 @@ instance Binary FieldValue where
             'x' -> do
                 len <- get :: Get Word32
                 FVByteArray <$> getByteString (fromIntegral len)
+            c   -> error ("Unknown field type: " ++ show c)
 
     put (FVBool x) = put 't' >> put x
     put (FVInt8 x) = put 'b' >> put x

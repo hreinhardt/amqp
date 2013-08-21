@@ -7,6 +7,7 @@ import Data.Binary.Get
 import Data.Binary.Put
 import Data.Bits
 
+getContentHeaderProperties :: ShortInt -> Get ContentHeaderProperties
 getContentHeaderProperties 10 = getPropBits 0 >>= \[] ->  return CHConnection 
 getContentHeaderProperties 20 = getPropBits 0 >>= \[] ->  return CHChannel 
 getContentHeaderProperties 30 = getPropBits 0 >>= \[] ->  return CHAccess 
@@ -20,6 +21,8 @@ getContentHeaderProperties 100 = getPropBits 0 >>= \[] ->  return CHDtx
 getContentHeaderProperties 110 = getPropBits 5 >>= \[a,b,c,d,e] -> condGet a >>= \a' -> condGet b >>= \b' -> condGet c >>= \c' -> condGet d >>= \d' -> condGet e >>= \e' ->  return (CHTunnel a' b' c' d' e' )
 getContentHeaderProperties 120 = getPropBits 0 >>= \[] ->  return CHTest 
 
+getContentHeaderProperties n = error ("Unexpected content header properties: " ++ show n)
+putContentHeaderProperties :: ContentHeaderProperties -> Put
 putContentHeaderProperties CHConnection = putPropBits [] 
 putContentHeaderProperties CHChannel = putPropBits [] 
 putContentHeaderProperties CHAccess = putPropBits [] 
@@ -33,6 +36,7 @@ putContentHeaderProperties CHDtx = putPropBits []
 putContentHeaderProperties (CHTunnel a b c d e) = putPropBits [isJust a,isJust b,isJust c,isJust d,isJust e]  >> condPut a >> condPut b >> condPut c >> condPut d >> condPut e
 putContentHeaderProperties CHTest = putPropBits [] 
 
+getClassIDOf :: ContentHeaderProperties -> ShortInt
 getClassIDOf (CHConnection) = 10
 getClassIDOf (CHChannel) = 20
 getClassIDOf (CHAccess) = 30
@@ -107,26 +111,34 @@ data ContentHeaderProperties =
 -- | Packs up to 8 bits into a Word8
 putBits :: [Bit] -> Put
 putBits xs = putWord8 $ putBits' 0 xs
+putBits' :: Int -> [Bit] -> Word8
 putBits' _ [] = 0
 putBits' offset (x:xs) = (shiftL (toInt x) offset) .|. (putBits' (offset+1) xs)
     where toInt True = 1
           toInt False = 0
+getBits :: Int -> Get [Bit]
 getBits num = getWord8 >>= \x -> return $ getBits' num 0 x
-getBits' 0 offset _= []
+getBits' :: Int -> Int -> Word8 -> [Bit]
+getBits' 0 _ _ = []
 getBits' num offset x = ((x .&. (2^offset)) /= 0) : (getBits' (num-1) (offset+1) x)
 -- | Packs up to 15 Bits into a Word16 (=Property Flags) 
 putPropBits :: [Bit] -> Put
 putPropBits xs = putWord16be $ (putPropBits' 0 xs) 
+putPropBits' :: Int -> [Bit] -> Word16
 putPropBits' _ [] = 0
 putPropBits' offset (x:xs) = (shiftL (toInt x) (15-offset)) .|. (putPropBits' (offset+1) xs)
     where toInt True = 1
           toInt False = 0
-getPropBits num = getWord16be >>= \x -> return $ getPropBits' num 0  x 
-getPropBits' 0 offset _= []
+getPropBits :: Int -> Get [Bit]
+getPropBits num = getWord16be >>= \x -> return $ getPropBits' num 0 x
+getPropBits' :: Int -> Int -> Word16 -> [Bit]
+getPropBits' 0 _ _ = []
 getPropBits' num offset x = ((x .&. (2^(15-offset))) /= 0) : (getPropBits' (num-1) (offset+1) x)
+condGet :: Binary a => Bool -> Get (Maybe a)
 condGet False = return Nothing
 condGet True = get >>= \x -> return $ Just x
 
+condPut :: Binary a => Maybe a -> Put
 condPut (Just x) = put x
 condPut _ = return ()
 
@@ -313,6 +325,7 @@ instance Binary MethodPayload where
 			(120,31) -> get >>= \a -> get >>= \b ->  return (Test_table_ok a b)
 			(120,40) ->  return Test_content
 			(120,41) -> get >>= \a ->  return (Test_content_ok a)
+			x -> error ("Unexpected classID and methodID: " ++ show x)
 data MethodPayload = 
 
 	Connection_start

@@ -124,9 +124,7 @@ import qualified Data.Sequence as Seq
 import qualified Data.Foldable as F
 import qualified Data.Text as T
 import Data.Text (Text)
-import Data.IORef
 import Data.Maybe
-import Data.Int
 import System.IO
 
 import Control.Concurrent
@@ -134,7 +132,6 @@ import Control.Monad
 import qualified Control.Exception as CE
 
 
-import Network.BSD
 import Network
 
 
@@ -193,10 +190,10 @@ declareExchange chan exchg = do
     
 -- | deletes the exchange with the provided name
 deleteExchange :: Channel -> Text -> IO ()
-deleteExchange chan exchangeName = do    
+deleteExchange chan exchange = do
     (SimpleMethod Exchange_delete_ok) <- request chan (SimpleMethod (Exchange_delete
         1 -- ticket; ignored by rabbitMQ
-        (ShortString exchangeName) -- exchange
+        (ShortString exchange) -- exchange
         False -- if_unused;  If set, the server will only delete the exchange if it has no queue bindings.
         False -- nowait
         )) 
@@ -225,8 +222,8 @@ newQueue = QueueOpts "" False True False False (FieldTable M.empty)
 
 -- | creates a new queue on the AMQP server; can be used like this: @declareQueue channel newQueue {queueName = \"myQueue\"}@. 
 --
--- Returns a tuple @(queueName, messageCount, consumerCount)@. 
--- @queueName@ is the name of the new queue (if you don't specify a queueName the server will autogenerate one). 
+-- Returns a tuple @(queue, messageCount, consumerCount)@.
+-- @queue@ is the name of the new queue (if you don't specify a queue the server will autogenerate one).
 -- @messageCount@ is the number of messages in the queue, which will be zero for newly-created queues. @consumerCount@ is the number of active consumers for the queue.
 declareQueue :: Channel -> QueueOpts -> IO (Text, Int, Int)
 declareQueue chan queue = do
@@ -242,18 +239,18 @@ declareQueue chan queue = do
 
     return (qName, fromIntegral messageCount, fromIntegral consumerCount)
 
--- | @bindQueue chan queueName exchangeName routingKey@ binds the queue to the exchange using the provided routing key
+-- | @bindQueue chan queue exchange routingKey@ binds the queue to the exchange using the provided routing key
 bindQueue :: Channel -> Text -> Text -> Text -> IO ()
-bindQueue chan queueName exchangeName routingKey = do
-    bindQueue' chan queueName exchangeName routingKey (FieldTable (M.fromList []))
+bindQueue chan queue exchange routingKey = do
+    bindQueue' chan queue exchange routingKey (FieldTable (M.fromList []))
 
 -- | an extended version of @bindQueue@ that allows you to include arbitrary arguments. This is useful to use the @headers@ exchange-type.
 bindQueue' :: Channel -> Text -> Text -> Text -> FieldTable -> IO ()
-bindQueue' chan queueName exchangeName routingKey args = do
+bindQueue' chan queue exchange routingKey args = do
     (SimpleMethod Queue_bind_ok) <- request chan (SimpleMethod (Queue_bind
         1 -- ticket; ignored by rabbitMQ
-        (ShortString queueName)
-        (ShortString exchangeName)
+        (ShortString queue)
+        (ShortString exchange)
         (ShortString routingKey)
         False -- nowait
         args -- arguments
@@ -262,20 +259,20 @@ bindQueue' chan queueName exchangeName routingKey args = do
 
 -- | remove all messages from the queue; returns the number of messages that were in the queue       
 purgeQueue :: Channel -> Text -> IO Word32
-purgeQueue chan queueName = do
+purgeQueue chan queue = do
     (SimpleMethod (Queue_purge_ok msgCount)) <- request chan $ (SimpleMethod (Queue_purge
         1 -- ticket
-        (ShortString queueName) -- queue
+        (ShortString queue) -- queue
         False -- nowait
         ))
     return msgCount
 
 -- | deletes the queue; returns the number of messages that were in the queue before deletion
 deleteQueue :: Channel -> Text -> IO Word32
-deleteQueue chan queueName = do
+deleteQueue chan queue = do
     (SimpleMethod (Queue_delete_ok msgCount)) <- request chan $ (SimpleMethod (Queue_delete
         1 -- ticket
-        (ShortString queueName) -- queue
+        (ShortString queue) -- queue
         False -- if_unused
         False -- if_empty
         False -- nowait
@@ -296,12 +293,12 @@ ackToBool :: Ack -> Bool
 ackToBool Ack = False
 ackToBool NoAck = True
 
--- | @consumeMsgs chan queueName ack callback@ subscribes to the given queue and returns a consumerTag. For any incoming message, the callback will be run. If @ack == 'Ack'@ you will have to acknowledge all incoming messages (see 'ackMsg' and 'ackEnv')
+-- | @consumeMsgs chan queue ack callback@ subscribes to the given queue and returns a consumerTag. For any incoming message, the callback will be run. If @ack == 'Ack'@ you will have to acknowledge all incoming messages (see 'ackMsg' and 'ackEnv')
 --
 -- NOTE: The callback will be run on the same thread as the channel thread (every channel spawns its own thread to listen for incoming data) so DO NOT perform any request on @chan@ inside the callback (however, you CAN perform requests on other open channels inside the callback, though I wouldn't recommend it).
 -- Functions that can safely be called on @chan@ are 'ackMsg', 'ackEnv', 'rejectMsg', 'recoverMsgs'. If you want to perform anything more complex, it's a good idea to wrap it inside 'forkIO'.
 consumeMsgs :: Channel -> Text -> Ack -> ((Message,Envelope) -> IO ()) -> IO ConsumerTag
-consumeMsgs chan queueName ack callback = do
+consumeMsgs chan queue ack callback = do
     --generate a new consumer tag
     newConsumerTag <- (fmap (T.pack . show)) $ modifyMVar (lastConsumerTag chan) $ \c -> return (c+1,c+1)
     
@@ -310,7 +307,7 @@ consumeMsgs chan queueName ack callback = do
     
     writeAssembly chan (SimpleMethod $ Basic_consume
         1 -- ticket
-        (ShortString queueName) -- queue
+        (ShortString queue) -- queue
         (ShortString newConsumerTag) -- consumer_tag
         False -- no_local; If the no-local field is set the server will not send messages to the client that published them.
         (ackToBool ack) -- no_ack
@@ -322,7 +319,7 @@ consumeMsgs chan queueName ack callback = do
 -- | stops a consumer that was started with 'consumeMsgs'
 cancelConsumer :: Channel -> ConsumerTag -> IO ()
 cancelConsumer chan consumerTag = do
-    (SimpleMethod (Basic_cancel_ok consumerTag')) <- request chan $ (SimpleMethod (Basic_cancel
+    (SimpleMethod (Basic_cancel_ok _)) <- request chan $ (SimpleMethod (Basic_cancel
         (ShortString consumerTag) -- consumer_tag
         False -- nowait
         ))
@@ -331,14 +328,14 @@ cancelConsumer chan consumerTag = do
     modifyMVar_ (consumers chan) $ \c -> return $ M.delete consumerTag c
 
 
--- | @publishMsg chan exchangeName routingKey msg@ publishes @msg@ to the exchange with the provided @exchangeName@. The effect of @routingKey@ depends on the type of the exchange
--- 
+-- | @publishMsg chan exchange routingKey msg@ publishes @msg@ to the exchange with the provided @exchange@. The effect of @routingKey@ depends on the type of the exchange
+--
 -- NOTE: This method may temporarily block if the AMQP server requested us to stop sending content data (using the flow control mechanism). So don't rely on this method returning immediately
 publishMsg :: Channel -> Text -> Text -> Message -> IO ()
-publishMsg chan exchangeName routingKey msg = do
+publishMsg chan exchange routingKey msg = do
     writeAssembly chan (ContentMethod (Basic_publish
             1 -- ticket; ignored by rabbitMQ
-            (ShortString exchangeName)
+            (ShortString exchange)
             (ShortString routingKey)
             False -- mandatory; if true, the server might return the msg, which is currently not handled
             False) --immediate; if true, the server might return the msg, which is currently not handled
@@ -365,20 +362,21 @@ publishMsg chan exchangeName routingKey msg = do
     return ()
     
 
--- | @getMsg chan ack queueName@ gets a message from the specified queue. If @ack=='Ack'@, you have to call 'ackMsg' or 'ackEnv' for any message that you get, otherwise it might be delivered again in the future (by calling 'recoverMsgs')
+
+-- | @getMsg chan ack queue@ gets a message from the specified queue. If @ack=='Ack'@, you have to call 'ackMsg' or 'ackEnv' for any message that you get, otherwise it might be delivered again in the future (by calling 'recoverMsgs')
 getMsg :: Channel -> Ack -> Text -> IO (Maybe (Message, Envelope))
-getMsg chan ack queueName = do
+getMsg chan ack queue = do
     ret <- request chan (SimpleMethod (Basic_get
         1 -- ticket
-        (ShortString queueName) -- queue
+        (ShortString queue) -- queue
         (ackToBool ack) -- no_ack
         ))
 
     case ret of
-        ContentMethod (Basic_get_ok deliveryTag redelivered (ShortString exchangeName) (ShortString routingKey) msgCount) properties msgBody ->
-            return $ Just $ (msgFromContentHeaderProperties properties msgBody, 
-                             Envelope {envDeliveryTag = deliveryTag, envRedelivered = redelivered, 
-                             envExchangeName = exchangeName, envRoutingKey = routingKey, envChannel = chan})
+        ContentMethod (Basic_get_ok deliveryTag redelivered (ShortString exchange) (ShortString routingKey) _) properties body ->
+            return $ Just $ (msgFromContentHeaderProperties properties body,
+                             Envelope {envDeliveryTag = deliveryTag, envRedelivered = redelivered,
+                             envExchangeName = exchange, envRoutingKey = routingKey, envChannel = chan})
         _ -> return Nothing
     
     
@@ -480,11 +478,14 @@ data DeliveryMode = Persistent -- ^ the message will survive server restarts (if
                   | NonPersistent -- ^ the message may be lost after server restarts
     deriving (Eq, Ord, Read, Show)
 
+deliveryModeToInt :: DeliveryMode -> Octet
 deliveryModeToInt NonPersistent = 1
-deliveryModeToInt Persistent = 2   
+deliveryModeToInt Persistent = 2
 
+intToDeliveryMode :: Octet -> DeliveryMode
 intToDeliveryMode 1 = NonPersistent
 intToDeliveryMode 2 = Persistent
+intToDeliveryMode n = error ("Unknown delivery mode int: " ++ show n)
 
               
 -- | An AMQP message
@@ -534,9 +535,9 @@ collectContent chan = do
     return (props, BL.concat content)
   where 
     collect x | x <= 0 = return []
-    collect rem = do
+    collect x = do
         (ContentBodyPayload payload) <- readChan chan
-        r <- collect (rem - (BL.length payload))
+        r <- collect (x - (BL.length payload))
         return $ payload : r
 
 
@@ -573,13 +574,13 @@ connectionReceiver conn = do
   where
        
     forwardToChannel 0 (MethodPayload Connection_close_ok) = do
-        modifyMVar_ (connClosed conn) $ \x -> return $ Just "closed by user"
+        modifyMVar_ (connClosed conn) $ const $ return $ Just "closed by user"
         killThread =<< myThreadId
         
     
     forwardToChannel 0 (MethodPayload (Connection_close _ (ShortString errorMsg) _ _ )) = do
-        modifyMVar_ (connClosed conn) $ \x -> return $ Just $ T.unpack errorMsg
- 
+        modifyMVar_ (connClosed conn) $ const $ return $ Just $ T.unpack errorMsg
+
         killThread =<< myThreadId
     
     forwardToChannel 0 payload = print $ "Got unexpected msg on channel zero: "++(show payload)
@@ -615,12 +616,12 @@ openConnection' host port vhost loginName loginPassword = withSocketsDo $ do
         
     
     -- S: connection.start
-    Frame 0 (MethodPayload (Connection_start version_major version_minor server_properties mechanisms locales)) <- readFrame handle
+    Frame 0 (MethodPayload (Connection_start _ _ _ _ _)) <- readFrame handle
 
     -- C: start_ok
     writeFrame handle start_ok
     -- S: tune
-    Frame 0 (MethodPayload (Connection_tune channel_max frame_max heartbeat)) <- readFrame handle
+    Frame 0 (MethodPayload (Connection_tune _ frame_max _)) <- readFrame handle
     -- C: tune_ok
     let maxFrameSize = (min 131072 frame_max)
 
@@ -637,33 +638,33 @@ openConnection' host port vhost loginName loginPassword = withSocketsDo $ do
     -- Connection established!    
 
     --build Connection object
-    connChannels <- newMVar IM.empty
+    cChannels <- newMVar IM.empty
     lastChanID <- newMVar 0
     cClosed <- newMVar Nothing
     writeLock <- newMVar ()
     ccl <- newEmptyMVar
-    connClosedHandlers <- newMVar []
-    let conn = Connection handle connChannels (fromIntegral maxFrameSize) cClosed ccl writeLock connClosedHandlers lastChanID
-    
+    cClosedHandlers <- newMVar []
+    let conn = Connection handle cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cClosedHandlers lastChanID
+
     --spawn the connectionReceiver
-    forkIO $ CE.finally (connectionReceiver conn) 
-            (do 
+    void $ forkIO $ CE.finally (connectionReceiver conn)
+            (do
                 -- try closing socket
-                CE.catch (hClose handle) (\(e::CE.SomeException) -> return ())
-                
+                CE.catch (hClose handle) (\(_ :: CE.SomeException) -> return ())
+
                 -- mark as closed
                 modifyMVar_ cClosed $ \x -> return $ Just $ maybe "closed" id x
                 
                 --kill all channel-threads
-                withMVar connChannels $ \cc -> mapM_ (\c -> killThread $ snd c) $ IM.elems cc
-                withMVar connChannels $ \cc -> return $ IM.empty
-                
+                void $ withMVar cChannels $ \cc -> mapM_ (\c -> killThread $ snd c) $ IM.elems cc
+                void $ withMVar cChannels $ \_ -> return $ IM.empty
+
                 -- mark connection as closed, so all pending calls to 'closeConnection' can now return
-                tryPutMVar ccl ()
-                
+                void $ tryPutMVar ccl ()
+
                 -- notify connection-close-handlers
-                withMVar connClosedHandlers sequence
-                
+                withMVar cClosedHandlers sequence
+
                 )
 
     return conn
@@ -696,7 +697,7 @@ closeConnection c = do
             0 -- method_id
             )))
             )
-        (\ (e::CE.IOException) -> do
+        (\ (_ :: CE.IOException) -> do
             --do nothing if connection is already closed
             return ()
         ) 
@@ -728,10 +729,10 @@ readFrame handle = do
     dat' <- BL.hGet handle (len+1) -- +1 for the terminating 0xCE
     let ret = runGetOrFail get (BL.append dat dat')
     case ret of
-        Left (rest, consumedBytes, errMsg) -> error $ "readFrame fail: "++errMsg
-        Right (rest, consumedBytes, frame) | consumedBytes /= fromIntegral (len+8) -> 
+        Left (_, _, errMsg) -> error $ "readFrame fail: "++errMsg
+        Right (_, consumedBytes, _) | consumedBytes /= fromIntegral (len+8) ->
             error $ "readFrame: parser should read "++show (len+8)++" bytes; but read "++show consumedBytes
-        Right (rest, consumedBytes, frame) -> return frame
+        Right (_, _, frame) -> return frame
 
 
 
@@ -761,20 +762,21 @@ data Channel = Channel {
                 
 
 msgFromContentHeaderProperties :: ContentHeaderProperties -> BL.ByteString -> Message
-msgFromContentHeaderProperties 
-    (CHBasic content_type content_encoding headers delivery_mode priority correlation_id reply_to expiration
-             message_id timestamp typ user_id app_id cluster_id) msgBody = 
+msgFromContentHeaderProperties
+    (CHBasic content_type _ headers delivery_mode _ correlation_id reply_to _
+             message_id timestamp _ _ _ _) body =
     let msgId = fromShortString message_id
         contentType = fromShortString content_type
         replyTo = fromShortString reply_to
         correlationID = fromShortString correlation_id
         
         in
-            Message msgBody (fmap intToDeliveryMode delivery_mode) timestamp msgId contentType replyTo correlationID headers
+            Message body (fmap intToDeliveryMode delivery_mode) timestamp msgId contentType replyTo correlationID headers
   where
     fromShortString (Just (ShortString s)) = Just s
     fromShortString _ = Nothing
-    
+msgFromContentHeaderProperties c _ = error ("Unknown content header properties: " ++ show c)
+
 -- | The thread that is run for every channel
 channelReceiver :: Channel -> IO ()
 channelReceiver chan = do
@@ -804,15 +806,15 @@ channelReceiver chan = do
     isResponse _ = True
     
     --Basic.Deliver: forward msg to registered consumer
-    handleAsync (ContentMethod (Basic_deliver (ShortString consumerTag) deliveryTag redelivered (ShortString exchangeName)
-                                                (ShortString routingKey)) 
-                                properties msgBody) =
+    handleAsync (ContentMethod (Basic_deliver (ShortString consumerTag) deliveryTag redelivered (ShortString exchange)
+                                                (ShortString routingKey))
+                                properties body) =
         withMVar (consumers chan) (\s -> do
             case M.lookup consumerTag s of
                 Just subscriber -> do
-                    let msg = msgFromContentHeaderProperties properties msgBody
+                    let msg = msgFromContentHeaderProperties properties body
                     let env =  Envelope {envDeliveryTag = deliveryTag, envRedelivered = redelivered,
-                                    envExchangeName = exchangeName, envRoutingKey = routingKey, envChannel = chan}
+                                    envExchangeName = exchange, envRoutingKey = routingKey, envChannel = chan}
 
                     CE.catch (subscriber (msg, env))
                         (\(e::CE.SomeException) -> putStrLn $ "AMQP callback threw exception: "++show e)
@@ -820,8 +822,8 @@ channelReceiver chan = do
                     -- got a message, but have no registered subscriber; so drop it
                     return ()
             )
-            
-    handleAsync (SimpleMethod (Channel_close errorNum (ShortString errorMsg) _ _)) = do
+
+    handleAsync (SimpleMethod (Channel_close _ (ShortString errorMsg) _ _)) = do
         closeChannel' chan errorMsg
         killThread =<< myThreadId
         
@@ -834,22 +836,24 @@ channelReceiver chan = do
     
            
     --Basic.return
-    handleAsync (ContentMethod (Basic_return replyCode replyText exchange routingKey) properties msgData) =
+    handleAsync (ContentMethod (Basic_return _ _ _ _) _ _) =
         --TODO: implement handling
         -- this won't be called currently, because publishMsg sets "mandatory" and "immediate" to false
-        print "BASIC.RETURN not implemented" 
+        print ("BASIC.RETURN not implemented" :: String)
+    handleAsync m = error ("Unknown method: " ++ show m)
 
 
         
         
 -- closes the channel internally; but doesn't tell the server        
+closeChannel' :: Channel -> Text -> IO ()
 closeChannel' c reason = do
     modifyMVar_ (connChannels $ connection c) $ \old -> return $ IM.delete (fromIntegral $ channelID c) old
     -- mark channel as closed
     modifyMVar_ (chanClosed c) $ \x -> do
         if isNothing x
             then do
-                killLock $ chanActive c
+                void $ killLock $ chanActive c
                 killOutstandingResponses $ outstandingResponses c
                 return $ Just $ maybe (T.unpack reason) id x
             else return x
@@ -870,17 +874,17 @@ openChannel :: Connection -> IO Channel
 openChannel c = do
     newInQueue <- newChan
     outRes <- newMVar Seq.empty
-    lastConsumerTag <- newMVar 0
+    lastConsTag <- newMVar 0
     ca <- newLock
 
-    chanClosed <- newMVar Nothing
-    consumers <- newMVar M.empty 
-    
+    closed <- newMVar Nothing
+    conss <- newMVar M.empty
+
     --get a new unused channelID
     newChannelID <- modifyMVar (lastChannelID c) $ \x -> return (x+1,x+1)
-    
-    let newChannel = Channel c newInQueue outRes (fromIntegral newChannelID) lastConsumerTag ca chanClosed consumers 
-    
+
+    let newChannel = Channel c newInQueue outRes (fromIntegral newChannelID) lastConsTag ca closed conss
+
 
     thrID <- forkIO $ CE.finally (channelReceiver newChannel)
         (closeChannel' newChannel "closed")
@@ -905,7 +909,7 @@ writeFrames chan payloads =
                         -- ensure at most one thread is writing to the socket at any time
                         (withMVar (connWriteLock conn) $ \_ -> 
                             mapM_ (\payload -> writeFrame (connHandle conn) (Frame (channelID chan) payload)) payloads)
-                        ( \(e :: CE.IOException) -> do
+                        ( \(_ :: CE.IOException) -> do
                             CE.throwIO $ userError "connection not open"
                         )
                 else do
@@ -955,12 +959,12 @@ writeAssembly :: Channel -> Assembly -> IO ()
 writeAssembly chan m = 
     CE.catches
         (writeAssembly' chan m)
-        
-        [CE.Handler (\ (ex :: AMQPException) -> throwMostRelevantAMQPException chan),
-         CE.Handler (\ (ex :: CE.ErrorCall) -> throwMostRelevantAMQPException chan),
-         CE.Handler (\ (ex :: CE.IOException) -> throwMostRelevantAMQPException chan)]
-   
-   
+
+        [CE.Handler (\ (_ :: AMQPException) -> throwMostRelevantAMQPException chan),
+         CE.Handler (\ (_ :: CE.ErrorCall) -> throwMostRelevantAMQPException chan),
+         CE.Handler (\ (_ :: CE.IOException) -> throwMostRelevantAMQPException chan)]
+
+
 
 
 -- | sends an assembly and receives the response    
@@ -979,12 +983,13 @@ request chan m = do
             !r <- takeMVar res
             return r
             )
-        [CE.Handler (\ (ex :: AMQPException) -> throwMostRelevantAMQPException chan),
-         CE.Handler (\ (ex :: CE.ErrorCall) -> throwMostRelevantAMQPException chan),
-         CE.Handler (\ (ex :: CE.IOException) -> throwMostRelevantAMQPException chan)]
+        [CE.Handler (\ (_ :: AMQPException) -> throwMostRelevantAMQPException chan),
+         CE.Handler (\ (_ :: CE.ErrorCall) -> throwMostRelevantAMQPException chan),
+         CE.Handler (\ (_ :: CE.IOException) -> throwMostRelevantAMQPException chan)]
 
 -- this throws an AMQPException based on the status of the connection and the channel
 -- if both connection and channel are closed, it will throw a ConnectionClosedException
+throwMostRelevantAMQPException :: Channel -> IO a
 throwMostRelevantAMQPException chan = do
     cc <- readMVar $ connClosed $ connection chan
     case cc of
