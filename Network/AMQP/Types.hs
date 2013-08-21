@@ -31,10 +31,10 @@ import qualified Data.Map as M
 import qualified Data.Text.Encoding as T
 
 -- performs runGet on a bytestring until the string is empty
-readMany :: (Show t, Binary t) => BL.ByteString -> [t]
+readMany :: (Show a, Binary a) => BL.ByteString -> [a]
 readMany str = runGet (readMany' [] 0) str
 
-readMany' :: (Show t, Binary t) => [t] -> Int -> Get [t]
+readMany' :: (Show a, Binary a) => [a] -> Int -> Get [a]
 readMany' _ 1000 = error "readMany overflow"
 readMany' acc overflow = do
     x <- get
