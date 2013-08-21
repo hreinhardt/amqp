@@ -25,12 +25,7 @@ openLock :: Lock -> IO ()
 openLock (Lock _ b) = void $ tryPutMVar b ()
 
 closeLock :: Lock -> IO ()
-closeLock (Lock a b) = do
-    withMVar a $ \killed ->
-        if killed
-            then return ()
-            else tryTakeMVar b >> return ()
-    return ()
+closeLock (Lock a b) = withMVar a $ flip unless (void $ tryTakeMVar b)
 
 waitLock :: Lock -> IO ()
 waitLock (Lock _ b) = readMVar b
