@@ -606,7 +606,7 @@ openConnection' host port vhost loginName loginPassword = withSocketsDo $ do
 
                 --kill all channel-threads
                 void $ withMVar cChannels $ mapM_ (\c -> killThread $ snd c) . IM.elems
-                void $ withMVar cChannels $ \_ -> return $ IM.empty
+                void $ withMVar cChannels $ const $ return $ IM.empty
 
                 -- mark connection as closed, so all pending calls to 'closeConnection' can now return
                 void $ tryPutMVar ccl ()
