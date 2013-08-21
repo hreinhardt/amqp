@@ -12,7 +12,9 @@ toStrict = BS.concat . BL.toChunks
 toLazy :: BS.ByteString -> BL.ByteString
 toLazy = BL.fromChunks . return
 
--- if the lock is open, calls to waitLock will immediately return. if it is closed, calls to waitLock will block. if the lock is killed, it will always be open and can't be closed anymore
+-- if the lock is open, calls to waitLock will immediately return.
+-- if it is closed, calls to waitLock will block.
+-- if the lock is killed, it will always be open and can't be closed anymore
 data Lock = Lock (MVar Bool) (MVar ())
 
 newLock :: IO Lock
