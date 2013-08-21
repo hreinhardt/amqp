@@ -1,21 +1,20 @@
 {-# OPTIONS -XBangPatterns #-}
-module Network.AMQP.Types
-    (Octet,
-     Bit,
-     ChannelID,
-     PayloadSize,
-     ShortInt,
-     LongInt,
-     LongLongInt,
-     ShortString(..),
-     LongString(..),
-     Timestamp,
-     FieldTable(..),
-     FieldValue(..),
-     Decimals,
-     DecimalValue(..)
-     )
-     where
+module Network.AMQP.Types (
+    Octet,
+    Bit,
+    ChannelID,
+    PayloadSize,
+    ShortInt,
+    LongInt,
+    LongLongInt,
+    ShortString(..),
+    LongString(..),
+    Timestamp,
+    FieldTable(..),
+    FieldValue(..),
+    Decimals,
+    DecimalValue(..)
+) where
 
 import Control.Applicative
 import Data.Int
