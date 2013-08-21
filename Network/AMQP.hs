@@ -1,4 +1,4 @@
-{-# OPTIONS -XBangPatterns -XScopedTypeVariables -XDeriveDataTypeable -XOverloadedStrings #-}
+{-# LANGUAGE BangPatterns, DeriveDataTypeable, OverloadedStrings, ScopedTypeVariables #-}
 -- |
 --
 -- A client library for AMQP servers implementing the 0-8 spec; currently only supports RabbitMQ (see <http://www.rabbitmq.com>)
