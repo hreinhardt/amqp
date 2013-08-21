@@ -25,6 +25,12 @@ Library
   Other-modules:      Network.AMQP.Generated, Network.AMQP.Helpers, Network.AMQP.Protocol
   GHC-Options:        -Wall
 
+Executable amqp-builder
+  Build-Depends:      xml == 1.3.*
+  Hs-Source-Dirs:     Tools
+  Main-is:            Builder.hs
+  GHC-Options:        -Wall
+
 source-repository head
   type:     git
   location: https://github.com/hreinhardt/amqp
