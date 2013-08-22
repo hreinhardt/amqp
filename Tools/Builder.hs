@@ -24,7 +24,7 @@ fieldType domainMap (DomainField _ domain) = fromJust $ M.lookup domain domainMa
 
 main :: IO ()
 main = do
-    spec <- readFile "amqp0-8.xml"
+    spec <- readFile "amqp0-9-1.xml"
     let parsed = parseXML spec
     let !(Elem e) = parsed!!2
 
