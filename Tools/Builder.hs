@@ -60,8 +60,8 @@ main = do
         "import Network.AMQP.Types\n\n" ++
 
         "getContentHeaderProperties :: ShortInt -> Get ContentHeaderProperties" ++ "\n" ++
-        contentHeadersGetInst ++ "\n" ++
-        "getContentHeaderProperties n = error (\"Unexpected content header properties: \" ++ show n)" ++ "\n" ++
+        contentHeadersGetInst ++
+        "getContentHeaderProperties x = error (\"getContentHeaderProperties: Unexpected content header properties \" ++ show x)" ++ "\n" ++
 
         "putContentHeaderProperties :: ContentHeaderProperties -> Put" ++ "\n" ++
         contentHeadersPutInst ++ "\n" ++
@@ -126,7 +126,7 @@ main = do
         "\t\tmethodID <- getWord16be\n" ++
         "\t\tcase (classID, methodID) of\n" ++
         binaryGetInst ++
-        "\t\t\tx -> error (\"Unexpected classID and methodID: \" ++ show x)" ++ "\n" ++
+        "\t\t\tx -> error (\"get: Unexpected classID and methodID \" ++ show x)" ++ "\n" ++
 
         -- data declaration
         dataDecl)
@@ -141,7 +141,7 @@ translateType "bit" = "Bit"
 translateType "table" = "FieldTable"
 translateType "longlong" = "LongLongInt"
 translateType "timestamp" = "Timestamp"
-translateType x = error x
+translateType x = error ("translateType: unexpected type " ++ show x)
 
 fixClassName :: String -> String
 fixClassName s = (toUpper $ head s) : (tail s)
@@ -368,4 +368,4 @@ readField f =
         case (fType, fDomain) of
             (Just t, _) -> TypeField fieldName t
             (_, Just d) -> DomainField fieldName d
-            _           -> error ("Missing field type and domain attributes")
+            _           -> error ("readField: Missing field type and domain attributes")

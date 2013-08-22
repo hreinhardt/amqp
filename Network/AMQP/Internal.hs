@@ -40,7 +40,7 @@ deliveryModeToInt Persistent = 2
 intToDeliveryMode :: Octet -> DeliveryMode
 intToDeliveryMode 1 = NonPersistent
 intToDeliveryMode 2 = Persistent
-intToDeliveryMode n = error ("Unknown delivery mode int: " ++ show n)
+intToDeliveryMode n = error ("intToDeliveryMode: Unknown delivery mode int: " ++ show n)
 
 -- | An AMQP message
 data Message = Message {
@@ -97,7 +97,7 @@ readAssembly chan = do
                     (props, msg) <- collectContent chan
                     return $ ContentMethod p props msg
                 else return $ SimpleMethod p
-        x -> error $ "didn't expect frame: " ++ show x
+        x -> error ("readAssembly: Unexpected frame: " ++ show x)
 
 -- | reads a contentheader and contentbodies and assembles them
 collectContent :: Chan FramePayload -> IO (ContentHeaderProperties, BL.ByteString)
@@ -176,13 +176,13 @@ connectionReceiver conn = do
         writeFrame (connHandle conn) $ Frame 0 $ MethodPayload Connection_close_ok
         modifyMVar_ (connClosed conn) $ const $ return $ Just $ T.unpack errorMsg
         killThread =<< myThreadId
-    forwardToChannel 0 payload = putStrLn $ "Got unexpected msg on channel zero: " ++ show payload
+    forwardToChannel 0 payload = putStrLn ("forwardToChannel: Unexpected msg on channel zero: " ++ show payload)
     forwardToChannel chanID payload = do
         --got asynchronous msg => forward to registered channel
         withMVar (connChannels conn) $ \cs -> do
             case IM.lookup (fromIntegral chanID) cs of
                 Just c -> writeChan (inQueue $ fst c) payload
-                Nothing -> putStrLn $ "ERROR: channel not open " ++ show chanID
+                Nothing -> putStrLn ("forwardToChannel: Channel not open " ++ show chanID)
 
 -- | Opens a connection to a broker specified by the given 'ConnectionOpts' parameter.
 openConnection'' :: ConnectionOpts -> IO Connection
@@ -254,7 +254,7 @@ openConnection'' connOpts = withSocketsDo $ do
         result <- CE.try (connectTo host $ PortNumber port)
         either
             (\(ex :: CE.SomeException) -> do
-                putStrLn $ "Error connecting to " ++ show (host, port) ++ ": " ++ show ex
+                putStrLn ("connect: Error connecting to " ++ show (host, port) ++ ": " ++ show ex)
                 connect rest)
             return
             result
@@ -283,7 +283,7 @@ openConnection'' connOpts = withSocketsDo $ do
                 handleSecureUntilTune handle sasl
 
             tune@(Frame 0 (MethodPayload (Connection_tune _ _ _))) -> return tune
-            x -> error ("handleSecureUntilTune fail. received message: " ++ show x)
+            x -> error ("handleSecureUntilTune: Unexpected message: " ++ show x)
 
     open = (Frame 0 (MethodPayload (Connection_open
         (ShortString $ coVHost connOpts)
@@ -342,9 +342,9 @@ readFrame handle = do
     when (BL.null dat') $ CE.throwIO $ userError "connection not open"
     let ret = runGetOrFail get (BL.append dat dat')
     case ret of
-        Left (_, _, errMsg) -> error $ "readFrame fail: " ++ errMsg
+        Left (_, _, errMsg) -> error ("readFrame: " ++ errMsg)
         Right (_, consumedBytes, _) | consumedBytes /= fromIntegral (len+8) ->
-            error $ "readFrame: parser should read " ++ show (len+8) ++ " bytes; but read " ++ show consumedBytes
+            error ("readFrame: Parser should read " ++ show (len+8) ++ " bytes; but read " ++ show consumedBytes)
         Right (_, _, frame) -> return frame
 
 writeFrame :: Handle -> Frame -> IO ()
@@ -379,7 +379,7 @@ msgFromContentHeaderProperties (CHBasic content_type _ headers delivery_mode _ c
   where
     fromShortString (Just (ShortString s)) = Just s
     fromShortString _ = Nothing
-msgFromContentHeaderProperties c _ = error ("Unknown content header properties: " ++ show c)
+msgFromContentHeaderProperties c _ = error ("msgFromContentHeaderProperties: Unexpected content header properties: " ++ show c)
 
 -- | The thread that is run for every channel
 channelReceiver :: Channel -> IO ()
@@ -439,8 +439,8 @@ channelReceiver chan = do
             pubError = basicReturnToPublishError basicReturn
         withMVar (returnListeners chan) $ \listeners ->
             forM_ listeners $ \l -> CE.catch (l (msg, pubError)) $ \(ex :: CE.SomeException) ->
-                putStrLn $ "return listener on channel [" ++ show (channelID chan) ++ "] handling error [" ++ show pubError ++ "] threw exception: " ++ show ex
-    handleAsync m = error ("Unknown method: " ++ show m)
+                putStrLn ("handleAsync: return listener on channel [" ++ show (channelID chan) ++ "] handling error [" ++ show pubError ++ "] threw exception: " ++ show ex)
+    handleAsync m = error ("handleAsync: Unknown method: " ++ show m)
 
     basicReturnToPublishError (Basic_return code (ShortString errText) (ShortString exchange) (ShortString routingKey)) =
         let replyError = case code of
@@ -450,7 +450,7 @@ channelReceiver chan = do
                 num -> Unknown num errText
             pubError = PublishError replyError (Just exchange) routingKey
         in pubError
-    basicReturnToPublishError x = error ("basicReturnToPublishError fail: " ++ show x)
+    basicReturnToPublishError x = error ("basicReturnToPublishError: unexpected return" ++ show x)
 
 -- | registers a callback function that is called whenever a message is returned from the broker ('basic.return').
 addReturnListener :: Channel -> ((Message, PublishError) -> IO ()) -> IO ()

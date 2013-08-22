@@ -38,7 +38,7 @@ readMany :: (Show a, Binary a) => BL.ByteString -> [a]
 readMany = runGet (readMany' [] 0)
 
 readMany' :: (Show a, Binary a) => [a] -> Int -> Get [a]
-readMany' _ 1000 = error "readMany overflow"
+readMany' _ 1000 = error "readMany': overflow"
 readMany' acc overflow = do
     x <- get
     emp <- isEmpty
@@ -71,7 +71,7 @@ instance Binary ShortString where
     put (ShortString x) = do
         let s = T.encodeUtf8 x
         if BS.length s > 255
-            then error "cannot encode ShortString with length > 255"
+            then error "put: Cannot encode ShortString with length > 255"
             else do
                 putWord8 $ fromIntegral (BS.length s)
                 putByteString s
@@ -157,7 +157,7 @@ instance Binary FieldValue where
             'x' -> do
                 len <- get :: Get Word32
                 FVByteArray <$> getByteString (fromIntegral len)
-            c   -> error ("Unknown field type: " ++ show c)
+            x   -> error ("get: Unknown field type " ++ show x)
 
     put (FVBool x) = put 't' >> put x
     put (FVInt8 x) = put 'b' >> put x
