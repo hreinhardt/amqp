@@ -113,8 +113,7 @@ main = do
         "condGet True = get >>= return . Just\n\n"++
 
         "condPut :: Binary a => Maybe a -> Put\n" ++
-        "condPut (Just x) = put x\n"++
-        "condPut _ = return ()\n\n"++
+        "condPut = maybe (return ()) put\n" ++
 
         "instance Binary MethodPayload where\n"++
 

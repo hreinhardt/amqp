@@ -139,9 +139,7 @@ condGet False = return Nothing
 condGet True = get >>= return . Just
 
 condPut :: Binary a => Maybe a -> Put
-condPut (Just x) = put x
-condPut _ = return ()
-
+condPut = maybe (return ()) put
 instance Binary MethodPayload where
 	put (Connection_start a b c d e) = putWord16be 10 >> putWord16be 10 >> put a >> put b >> put c >> put d >> put e
 	put (Connection_start_ok a b c d) = putWord16be 10 >> putWord16be 11 >> put a >> put b >> put c >> put d
