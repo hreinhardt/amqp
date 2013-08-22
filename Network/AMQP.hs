@@ -62,6 +62,8 @@ module Network.AMQP (
     ExchangeOpts(..),
     newExchange,
     declareExchange,
+    bindExchange,
+    bindExchange',
     deleteExchange,
 
     -- * Queues
@@ -168,6 +170,24 @@ declareExchange chan exchg = do
         (exchangeInternal exchg) -- internal
         False -- nowait
         (FieldTable (M.fromList [])))) -- arguments
+    return ()
+
+-- | @bindExchange chan destinationName sourceName routingKey@ binds the exchange to the exchange using the provided routing key
+bindExchange :: Channel -> Text -> Text -> Text -> IO ()
+bindExchange chan destinationName sourceName routingKey =
+    bindExchange' chan destinationName sourceName routingKey (FieldTable (M.fromList []))
+
+-- | an extended version of @bindExchange@ that allows you to include arbitrary arguments. This is useful to use the @headers@ exchange-type.
+bindExchange' :: Channel -> Text -> Text -> Text -> FieldTable -> IO ()
+bindExchange' chan destinationName sourceName routingKey args = do
+    (SimpleMethod Exchange_bind_ok) <- request chan (SimpleMethod (Exchange_bind
+        1 -- ticket; ignored by rabbitMQ
+        (ShortString destinationName)
+        (ShortString sourceName)
+        (ShortString routingKey)
+        False -- nowait
+        args -- arguments
+        ))
     return ()
 
 -- | deletes the exchange with the provided name
