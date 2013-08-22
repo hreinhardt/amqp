@@ -329,7 +329,7 @@ addConnectionClosedHandler conn ifClosed handler = do
             Just _ | ifClosed == True -> handler
 
             -- otherwise add it to the list
-            _ -> modifyMVar_ (connClosedHandlers conn) $ \old -> return $ handler:old
+            _ -> modifyMVar_ (connClosedHandlers conn) $ return . (handler:)
 
 readFrame :: Handle -> IO Frame
 readFrame handle = do
@@ -459,7 +459,7 @@ addReturnListener chan listener = do
 -- closes the channel internally; but doesn't tell the server
 closeChannel' :: Channel -> Text -> IO ()
 closeChannel' c reason = do
-    modifyMVar_ (connChannels $ connection c) $ \old -> return $ IM.delete (fromIntegral $ channelID c) old
+    modifyMVar_ (connChannels $ connection c) $ return . IM.delete (fromIntegral $ channelID c)
     -- mark channel as closed
     modifyMVar_ (chanClosed c) $ \x -> do
         if isNothing x
