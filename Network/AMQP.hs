@@ -81,6 +81,7 @@ module Network.AMQP (
     ConsumerTag,
     Ack(..),
     consumeMsgs,
+    consumeMsgs',
     cancelConsumer,
     publishMsg,
     getMsg,
@@ -275,7 +276,12 @@ ackToBool NoAck = True
 -- NOTE: The callback will be run on the same thread as the channel thread (every channel spawns its own thread to listen for incoming data) so DO NOT perform any request on @chan@ inside the callback (however, you CAN perform requests on other open channels inside the callback, though I wouldn't recommend it).
 -- Functions that can safely be called on @chan@ are 'ackMsg', 'ackEnv', 'rejectMsg', 'recoverMsgs'. If you want to perform anything more complex, it's a good idea to wrap it inside 'forkIO'.
 consumeMsgs :: Channel -> Text -> Ack -> ((Message,Envelope) -> IO ()) -> IO ConsumerTag
-consumeMsgs chan queue ack callback = do
+consumeMsgs chan queue ack callback =
+  consumeMsgs' chan queue ack callback (FieldTable (M.fromList []))
+
+-- | an extended version of @consumeMsgs@ that allows you to include arbitrary arguments.
+consumeMsgs' :: Channel -> Text -> Ack -> ((Message,Envelope) -> IO ()) -> FieldTable -> IO ConsumerTag
+consumeMsgs' chan queue ack callback args = do
     --generate a new consumer tag
     newConsumerTag <- (fmap (T.pack . show)) $ modifyMVar (lastConsumerTag chan) $ \c -> return (c+1,c+1)
 
@@ -290,7 +296,7 @@ consumeMsgs chan queue ack callback = do
         (ackToBool ack) -- no_ack
         False -- exclusive; Request exclusive consumer access, meaning only this consumer can access the queue.
         True -- nowait
-        (FieldTable (M.fromList []))
+        args
         )
     return newConsumerTag
 
