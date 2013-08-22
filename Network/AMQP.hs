@@ -290,6 +290,7 @@ consumeMsgs chan queue ack callback = do
         (ackToBool ack) -- no_ack
         False -- exclusive; Request exclusive consumer access, meaning only this consumer can access the queue.
         True -- nowait
+        (FieldTable (M.fromList []))
         )
     return newConsumerTag
 
@@ -561,8 +562,8 @@ openConnection' host port vhost loginName loginPassword = withSocketsDo $ do
         BPut.putByteString $ BS.pack "AMQP"
         BPut.putWord8 1
         BPut.putWord8 1 --TCP/IP
-        BPut.putWord8 9 --Major Version
-        BPut.putWord8 1 --Minor Version
+        BPut.putWord8 0 --Major Version
+        BPut.putWord8 9 --Minor Version
 
     -- S: connection.start
     Frame 0 (MethodPayload (Connection_start _ _ _ _ _)) <- readFrame handle
@@ -805,7 +806,7 @@ openChannel c = do
     --add new channel to connection's channel map
     modifyMVar_ (connChannels c) (return . IM.insert newChannelID (newChannel, thrID))
 
-    (SimpleMethod Channel_open_ok) <- request newChannel (SimpleMethod (Channel_open (ShortString "")))
+    (SimpleMethod (Channel_open_ok _)) <- request newChannel (SimpleMethod (Channel_open (ShortString "")))
     return newChannel
 
 -- | writes multiple frames to the channel atomically
