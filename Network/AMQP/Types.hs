@@ -17,7 +17,6 @@ module Network.AMQP.Types
      )
      where
 
-
 import Data.Int
 import Data.Char
 import Data.Binary
@@ -30,7 +29,6 @@ import Data.Text (Text)
 import qualified Data.Text.Encoding as T
 import qualified Data.Map as M
 import Data.Binary.IEEE754
-
 
 -- performs runGet on a bytestring until the string is empty
 readMany :: (Show t, Binary t) => BL.ByteString -> [t]
@@ -59,8 +57,6 @@ type ShortInt = Word16
 type LongInt = Word32
 type LongLongInt = Word64
 
-
-
 newtype ShortString = ShortString Text
     deriving (Eq, Ord, Read, Show)
 instance Binary ShortString where
@@ -68,6 +64,7 @@ instance Binary ShortString where
       len <- getWord8
       dat <- getByteString (fromIntegral len)
       return $ ShortString $ T.decodeUtf8 dat
+
     put (ShortString x) = do
         let s = T.encodeUtf8 x
         if BS.length s > 255
@@ -75,7 +72,7 @@ instance Binary ShortString where
             else do
                 putWord8 $ fromIntegral (BS.length s)
                 putByteString s
-    
+
 newtype LongString = LongString Text
     deriving (Eq, Ord, Read, Show)
 instance Binary LongString where
@@ -83,14 +80,13 @@ instance Binary LongString where
       len <- getWord32be
       dat <- getByteString (fromIntegral len)
       return $ LongString $ T.decodeUtf8 dat
+
     put (LongString x) = do
         let s = T.encodeUtf8 x
         putWord32be $ fromIntegral (BS.length s)
         putByteString s
 
 type Timestamp = Word64
-
-
 
 --- field-table ---
 
@@ -100,22 +96,18 @@ data FieldTable = FieldTable (M.Map Text FieldValue)
 instance Binary FieldTable where
     get = do
         len <- get :: Get LongInt --length of fieldValuePairs in bytes
-        
-        if len > 0 
+        if len > 0
             then do
                 fvp <- getLazyByteString (fromIntegral len)
                 let !fields = readMany fvp
-                
                 return $ FieldTable $ M.fromList $ map (\(ShortString a, b) -> (a,b)) fields
             else return $ FieldTable $ M.empty
-                
+
     put (FieldTable fvp) = do
         let bytes = runPut (putMany $ map (\(a,b) -> (ShortString a, b)) $ M.toList fvp) :: BL.ByteString
         put ((fromIntegral $ BL.length bytes):: LongInt)
         putLazyByteString bytes
-    
 
-    
 --- field-value ---
 
 data FieldValue = FVBool Bool
@@ -133,7 +125,7 @@ data FieldValue = FVBool Bool
                 | FVVoid
                 | FVByteArray BS.ByteString
     deriving (Eq, Ord, Read, Show)
-                
+
 instance Binary FieldValue where
     get = do
         fieldType <- getWord8
@@ -146,12 +138,12 @@ instance Binary FieldValue where
             'f' -> FVFloat <$> getFloat32be
             'd' -> FVDouble <$> getFloat64be
             'D' -> FVDecimal <$> get
-            'S' -> do 
+            'S' -> do
                 LongString x <- get :: Get LongString
                 return $ FVString x
             'A' -> do
-                len <- get :: Get Int32 
-                if len > 0 
+                len <- get :: Get Int32
+                if len > 0
                     then do
                         fvp <- getLazyByteString (fromIntegral len)
                         let !fields = readMany fvp
@@ -176,7 +168,7 @@ instance Binary FieldValue where
     put (FVString x) = put 'S' >> put (LongString x)
     put (FVFieldArray x) = do
         put 'A'
-        if length x == 0 
+        if length x == 0
             then put (0 :: Int32)
             else do
                 let bytes = runPut (putMany x) :: BL.ByteString
@@ -190,18 +182,15 @@ instance Binary FieldValue where
         let len = fromIntegral (BS.length x) :: Word32
         put len
         putByteString x
-    
-    
-data DecimalValue = DecimalValue Decimals LongInt    
+
+data DecimalValue = DecimalValue Decimals LongInt
     deriving (Eq, Ord, Read, Show)
-instance Binary DecimalValue where   
+instance Binary DecimalValue where
     get = do
       a <- getWord8
       b <- get :: Get LongInt
       return $ DecimalValue a b
+
     put (DecimalValue a b) = put a >> put b
-    
-type Decimals = Octet       
 
-
-
+type Decimals = Octet

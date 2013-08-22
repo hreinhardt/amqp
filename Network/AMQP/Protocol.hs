@@ -10,14 +10,12 @@ import qualified Data.ByteString.Lazy.Char8 as BL
 import Network.AMQP.Types
 import Network.AMQP.Generated
 
-
 --True if a content (contentheader and possibly contentbody) will follow the method
 hasContent :: FramePayload -> Bool
 hasContent (MethodPayload (Basic_get_ok _ _ _ _ _)) = True
 hasContent (MethodPayload (Basic_deliver _ _ _ _ _)) = True
 hasContent (MethodPayload (Basic_return _ _ _ _)) = True
 hasContent _ = False
-        
 
 data Frame = Frame ChannelID FramePayload --channel, payload
     deriving Show
@@ -29,6 +27,7 @@ instance Binary Frame where
         payload <- getPayload fType payloadSize :: Get FramePayload
         0xCE <- getWord8 --frame end
         return $ Frame channel payload
+
     put (Frame chan payload) = do
         putWord8 $ frameType payload
         put chan
@@ -37,21 +36,19 @@ instance Binary Frame where
         putLazyByteString buf
         putWord8 0xCE
 
-        
 -- gets the size of the frame
 -- the bytestring should be at least 7 bytes long, otherwise this method will fail
-peekFrameSize :: BL.ByteString -> PayloadSize        
+peekFrameSize :: BL.ByteString -> PayloadSize
 peekFrameSize b = runGet f b
   where
     f = do
-        void $ getWord8 -- 1 byte
-        void $ (get :: Get ChannelID) -- 2 bytes
-        ps <- get :: Get PayloadSize -- 4 bytes
-        return ps
-    
+      void $ getWord8 -- 1 byte
+      void $ (get :: Get ChannelID) -- 2 bytes
+      ps <- get :: Get PayloadSize -- 4 bytes
+      return ps
 
-data FramePayload = 
-               MethodPayload MethodPayload 
+data FramePayload =
+               MethodPayload MethodPayload
              | ContentHeaderPayload ShortInt ShortInt LongLongInt ContentHeaderProperties --classID, weight, bodySize, propertyFields
              | ContentBodyPayload BL.ByteString
     deriving Show
@@ -65,15 +62,12 @@ getPayload :: Word8 -> PayloadSize -> Get FramePayload
 getPayload 1 _ = do --METHOD FRAME
     payLoad <- get :: Get MethodPayload
     return (MethodPayload payLoad)
-
 getPayload 2 _ = do --content header frame
     classID <- get :: Get ShortInt
     weight <- get :: Get ShortInt
     bodySize <- get :: Get LongLongInt
-   
     props <- getContentHeaderProperties classID
     return (ContentHeaderPayload classID weight bodySize props)
-
 getPayload 3 payloadSize = do --content body frame
     payload <- getLazyByteString $ fromIntegral payloadSize
     return (ContentBodyPayload payload)
@@ -82,17 +76,10 @@ getPayload n _ = error ("Unknown frame payload: " ++ show n)
 putPayload :: FramePayload -> Put
 putPayload (MethodPayload payload) = do
     put payload
-      
 putPayload (ContentHeaderPayload classID weight bodySize p) = do
     put classID
     put weight
     put bodySize
-    
     putContentHeaderProperties p
-    
 putPayload (ContentBodyPayload payload) = do
-    putLazyByteString payload    
-        
-
-
-
+    putLazyByteString payload
