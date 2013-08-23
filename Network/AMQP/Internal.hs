@@ -246,7 +246,7 @@ openConnection'' connOpts = withSocketsDo $ do
                 -- mark connection as closed, so all pending calls to 'closeConnection' can now return
                 void $ tryPutMVar ccl ()
 
-                -- notify connection-close-handlers
+                -- notify connection-closed-handlers
                 withMVar cClosedHandlers sequence
     return conn
   where
