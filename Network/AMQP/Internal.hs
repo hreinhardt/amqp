@@ -326,7 +326,7 @@ addConnectionClosedHandler conn ifClosed handler = do
     withMVar (connClosed conn) $ \cc ->
         case cc of
             -- connection is already closed, so call the handler directly
-            Just _ | ifClosed == True -> handler
+            Just _ | ifClosed -> handler
 
             -- otherwise add it to the list
             _ -> modifyMVar_ (connClosedHandlers conn) $ return . (handler:)
