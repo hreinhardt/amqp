@@ -149,8 +149,8 @@ data ExchangeOpts = ExchangeOpts
                     -- optional
                     exchangePassive :: Bool, -- ^ (default 'False'); If set, the server will not create the exchange. The client can use this to check whether an exchange exists without modifying the server state.
                     exchangeDurable :: Bool, -- ^ (default 'True'); If set when creating a new exchange, the exchange will be marked as durable. Durable exchanges remain active when a server restarts. Non-durable exchanges (transient exchanges) are purged if/when a server restarts.
-                    exchangeAutoDelete :: Bool, -- ^ (default 'False'); If set, the exchange is deleted when all queues have finished using it.
-                    exchangeInternal :: Bool -- ^ (default 'False'); If set, the exchange may not be used directly by publishers, but only when bound to other exchanges. Internal exchanges are used to construct wiring that is not visible to applications.
+                    exchangeAutoDelete :: Bool, -- ^ (default 'False'); If set, the exchange is deleted when all queues have finished using it. NOTE: This option is deprecated in AMQP 0-9-1
+                    exchangeInternal :: Bool -- ^ (default 'False'); If set, the exchange may not be used directly by publishers, but only when bound to other exchanges. Internal exchanges are used to construct wiring that is not visible to applications. NOTE: This option is deprecated in AMQP 0-9-1
                 }
     deriving (Eq, Ord, Read, Show)
 
@@ -241,7 +241,7 @@ declareQueue chan queue = do
             (queueHeaders queue)))
     return (qName, fromIntegral messageCount, fromIntegral consumerCount)
 
--- | @bindQueue chan queue exchange routingKey@ binds the queue to the exchange using the provided routing key
+-- | @bindQueue chan queue exchange routingKey@ binds the queue to the exchange using the provided routing key. If @exchange@ is the empty string, the default exchange will be used.
 bindQueue :: Channel -> Text -> Text -> Text -> IO ()
 bindQueue chan queue exchange routingKey = bindQueue' chan queue exchange routingKey (FieldTable (M.fromList []))
 
@@ -390,7 +390,7 @@ getMsg chan ack queue = do
                              envExchangeName = exchange, envRoutingKey = routingKey, envChannel = chan})
         _ -> return Nothing
 
-{- | @ackMsg chan deliveryTag multiple@ acknowledges one or more messages.
+{- | @ackMsg chan deliveryTag multiple@ acknowledges one or more messages. A message MUST not be acknowledged more than once.
 
 if @multiple==True@, the @deliverTag@ is treated as \"up to and including\", so that the client can acknowledge multiple messages with a single method call. If @multiple==False@, @deliveryTag@ refers to a single message.
 
@@ -420,10 +420,11 @@ rejectMsg chan deliveryTag requeue =
 -- | @recoverMsgs chan requeue@ asks the broker to redeliver all messages that were received but not acknowledged on the specified channel.
 --If @requeue==False@, the message will be redelivered to the original recipient. If @requeue==True@, the server will attempt to requeue the message, potentially then delivering it to an alternative subscriber.
 recoverMsgs :: Channel -> Bool -> IO ()
-recoverMsgs chan requeue =
-    writeAssembly chan $ (SimpleMethod (Basic_recover
+recoverMsgs chan requeue = do
+    SimpleMethod Basic_recover_ok <- request chan $ (SimpleMethod (Basic_recover
         requeue -- requeue
         ))
+    return ()
 
 ------------------- TRANSACTIONS (TX) --------------------------
 
@@ -573,6 +574,7 @@ connectionReceiver conn = do
         modifyMVar_ (connClosed conn) $ const $ return $ Just "closed by user"
         killThread =<< myThreadId
     forwardToChannel 0 (MethodPayload (Connection_close _ (ShortString errorMsg) _ _ )) = do
+        writeFrame (connHandle conn) $ Frame 0 $ MethodPayload Connection_close_ok
         modifyMVar_ (connClosed conn) $ const $ return $ Just $ T.unpack errorMsg
         killThread =<< myThreadId
     forwardToChannel 0 payload = print $ "Got unexpected msg on channel zero: " ++ show payload
@@ -662,8 +664,8 @@ openConnection' host port vhost loginName loginPassword = withSocketsDo $ do
         (ShortString "en_US")) ))
     open = (Frame 0 (MethodPayload (Connection_open
         (ShortString vhost)  --virtual host
-        (ShortString $ T.pack "")   -- capabilities
-        True)))   --insist; True because we don't support redirect yet
+        (ShortString $ T.pack "") -- capabilities; deprecated in 0-9-1
+        True))) -- insist; deprecated in 0-9-1
 
 -- | closes a connection
 --
