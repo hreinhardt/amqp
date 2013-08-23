@@ -6,6 +6,13 @@ Library for accessing RabbitMQ from Haskell. Please see the [Hackage docs](http:
 Changelog
 =========
 
+### Version 0.5.0
+
+* support for AMQP 0-9-1
+* new function consumeMsgs' which allows you to pass in a field-table
+* new function bindExchange allows for binding an exchange to another exchange
+* new function unbindQueue allows unbinding a queue from an exchange
+
 ### Version 0.4.3
 
 * use Handles instead of sockets 
