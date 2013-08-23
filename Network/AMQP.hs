@@ -74,6 +74,7 @@ module Network.AMQP (
     bindQueue',
     purgeQueue,
     deleteQueue,
+    unbindQueue,
 
     -- * Messaging
     Message(..),
@@ -278,6 +279,17 @@ deleteQueue chan queue = do
         False -- nowait
         ))
     return msgCount
+
+-- | @unbindQueue chan queue exchange routingKey arguments@ unbinds a queue from an exchange. The @routingKey@ and @arguments@ must be identical to the ones specified when binding the queue.
+unbindQueue :: Channel -> Text -> Text -> Text -> FieldTable -> IO ()
+unbindQueue chan queue exchange routingKey arguments = do
+    SimpleMethod Queue_unbind_ok <- request chan $ SimpleMethod $ Queue_unbind
+        1 -- ticket
+        (ShortString queue)
+        (ShortString exchange)
+        (ShortString routingKey)
+        arguments
+    return ()
 
 ----- MSG (the BASIC class in AMQP) -----
 
