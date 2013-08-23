@@ -176,13 +176,13 @@ connectionReceiver conn = do
         writeFrame (connHandle conn) $ Frame 0 $ MethodPayload Connection_close_ok
         modifyMVar_ (connClosed conn) $ const $ return $ Just $ T.unpack errorMsg
         killThread =<< myThreadId
-    forwardToChannel 0 payload = putStrLn ("forwardToChannel: Unexpected msg on channel zero: " ++ show payload)
+    forwardToChannel 0 payload = error ("forwardToChannel: Unexpected msg on channel zero: " ++ show payload)
     forwardToChannel chanID payload = do
         --got asynchronous msg => forward to registered channel
         withMVar (connChannels conn) $ \cs -> do
             case IM.lookup (fromIntegral chanID) cs of
                 Just c -> writeChan (inQueue $ fst c) payload
-                Nothing -> putStrLn ("forwardToChannel: Channel not open " ++ show chanID)
+                Nothing -> error ("forwardToChannel: Channel not open " ++ show chanID)
 
 -- | Opens a connection to a broker specified by the given 'ConnectionOpts' parameter.
 openConnection'' :: ConnectionOpts -> IO Connection
