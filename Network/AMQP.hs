@@ -135,7 +135,6 @@ import Network.AMQP.Generated
 TODO:
 - handle basic.return
 - connection.secure
-- connection.redirect
 -}
 
 ----- EXCHANGE -----
@@ -170,13 +169,13 @@ declareExchange chan exchg = do
         (exchangeAutoDelete exchg)  -- auto_delete
         (exchangeInternal exchg) -- internal
         False -- nowait
-        (FieldTable (M.fromList [])))) -- arguments
+        (FieldTable M.empty))) -- arguments
     return ()
 
 -- | @bindExchange chan destinationName sourceName routingKey@ binds the exchange to the exchange using the provided routing key
 bindExchange :: Channel -> Text -> Text -> Text -> IO ()
 bindExchange chan destinationName sourceName routingKey =
-    bindExchange' chan destinationName sourceName routingKey (FieldTable (M.fromList []))
+    bindExchange' chan destinationName sourceName routingKey (FieldTable M.empty)
 
 -- | an extended version of @bindExchange@ that allows you to include arbitrary arguments. This is useful to use the @headers@ exchange-type.
 bindExchange' :: Channel -> Text -> Text -> Text -> FieldTable -> IO ()
@@ -243,7 +242,7 @@ declareQueue chan queue = do
 
 -- | @bindQueue chan queue exchange routingKey@ binds the queue to the exchange using the provided routing key. If @exchange@ is the empty string, the default exchange will be used.
 bindQueue :: Channel -> Text -> Text -> Text -> IO ()
-bindQueue chan queue exchange routingKey = bindQueue' chan queue exchange routingKey (FieldTable (M.fromList []))
+bindQueue chan queue exchange routingKey = bindQueue' chan queue exchange routingKey (FieldTable M.empty)
 
 -- | an extended version of @bindQueue@ that allows you to include arbitrary arguments. This is useful to use the @headers@ exchange-type.
 bindQueue' :: Channel -> Text -> Text -> Text -> FieldTable -> IO ()
@@ -309,7 +308,7 @@ ackToBool NoAck = True
 -- Functions that can safely be called on @chan@ are 'ackMsg', 'ackEnv', 'rejectMsg', 'recoverMsgs'. If you want to perform anything more complex, it's a good idea to wrap it inside 'forkIO'.
 consumeMsgs :: Channel -> Text -> Ack -> ((Message,Envelope) -> IO ()) -> IO ConsumerTag
 consumeMsgs chan queue ack callback =
-  consumeMsgs' chan queue ack callback (FieldTable (M.fromList []))
+  consumeMsgs' chan queue ack callback (FieldTable M.empty)
 
 -- | an extended version of @consumeMsgs@ that allows you to include arbitrary arguments.
 consumeMsgs' :: Channel -> Text -> Ack -> ((Message,Envelope) -> IO ()) -> FieldTable -> IO ConsumerTag
@@ -573,17 +572,17 @@ connectionReceiver conn = do
     forwardToChannel 0 (MethodPayload Connection_close_ok) = do
         modifyMVar_ (connClosed conn) $ const $ return $ Just "closed by user"
         killThread =<< myThreadId
-    forwardToChannel 0 (MethodPayload (Connection_close _ (ShortString errorMsg) _ _ )) = do
+    forwardToChannel 0 (MethodPayload (Connection_close _ (ShortString errorMsg) _ _)) = do
         writeFrame (connHandle conn) $ Frame 0 $ MethodPayload Connection_close_ok
         modifyMVar_ (connClosed conn) $ const $ return $ Just $ T.unpack errorMsg
         killThread =<< myThreadId
-    forwardToChannel 0 payload = print $ "Got unexpected msg on channel zero: " ++ show payload
+    forwardToChannel 0 payload = putStrLn $ "Got unexpected msg on channel zero: " ++ show payload
     forwardToChannel chanID payload = do
         --got asynchronous msg => forward to registered channel
         withMVar (connChannels conn) $ \cs -> do
             case IM.lookup (fromIntegral chanID) cs of
                 Just c -> writeChan (inQueue $ fst c) payload
-                Nothing -> print $ "ERROR: channel not open " ++ show chanID
+                Nothing -> putStrLn $ "ERROR: channel not open " ++ show chanID
 
 -- | @openConnection hostname virtualHost loginName loginPassword@ opens a connection to an AMQP server running on @hostname@.
 -- @virtualHost@ is used as a namespace for AMQP resources (default is \"/\"), so different applications could use multiple virtual hosts on the same AMQP server.
@@ -657,10 +656,10 @@ openConnection' host port vhost loginName loginPassword = withSocketsDo $ do
                 )
     return conn
   where
-    start_ok = (Frame 0 (MethodPayload (Connection_start_ok  (FieldTable (M.fromList []))
+    start_ok = (Frame 0 (MethodPayload (Connection_start_ok (FieldTable M.empty)
         (ShortString "AMQPLAIN")
         --login has to be a table without first 4 bytes
-        (LongString (T.pack $ drop 4 $ BL.unpack $ runPut $ put $ FieldTable (M.fromList [("LOGIN",FVString loginName), ("PASSWORD", FVString loginPassword)])))
+        (LongString $ T.pack $ drop 4 $ BL.unpack $ runPut $ put $ FieldTable $ M.fromList [("LOGIN",FVString loginName), ("PASSWORD", FVString loginPassword)])
         (ShortString "en_US")) ))
     open = (Frame 0 (MethodPayload (Connection_open
         (ShortString vhost)  --virtual host
@@ -800,7 +799,7 @@ channelReceiver chan = do
     handleAsync (ContentMethod (Basic_return _ _ _ _) _ _) =
         --TODO: implement handling
         -- this won't be called currently, because publishMsg sets "mandatory" and "immediate" to false
-        print ("BASIC.RETURN not implemented" :: String)
+        putStrLn ("BASIC.RETURN not implemented" :: String)
     handleAsync m = error ("Unknown method: " ++ show m)
 
 -- closes the channel internally; but doesn't tell the server
@@ -816,7 +815,7 @@ closeChannel' c reason = do
                 return $ Just $ maybe (T.unpack reason) id x
             else return x
   where
-    killOutstandingResponses :: (MVar (Seq.Seq (MVar a))) -> IO ()
+    killOutstandingResponses :: MVar (Seq.Seq (MVar a)) -> IO ()
     killOutstandingResponses outResps = do
         modifyMVar_ outResps $ \val -> do
             F.mapM_ (\x -> tryPutMVar x $ error "channel closed") val
