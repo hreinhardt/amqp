@@ -131,7 +131,8 @@ data Connection = Connection {
                     connClosed :: MVar (Maybe String),
                     connClosedLock :: MVar (), -- used by closeConnection to block until connection-close handshake is complete
                     connWriteLock :: MVar (), -- to ensure atomic writes to the socket
-                    connClosedHandlers :: MVar [IO ()],
+                    connException :: MVar (Maybe CE.SomeException),
+                    connClosedHandlers :: MVar [Maybe CE.SomeException -> IO ()],
                     lastChannelID :: MVar Int --for auto-incrementing the channelIDs
                 }
 
@@ -163,8 +164,9 @@ connectionReceiver conn = do
         Frame chanID payload <- readFrame (connHandle conn)
         forwardToChannel chanID payload
         )
-        (\(e :: CE.IOException) -> do
+        (\(e :: CE.SomeException) -> do
             modifyMVar_ (connClosed conn) $ const $ return $ Just $ show e
+            modifyMVar_ (connException conn) $ const $ return $ Just e
             killThread =<< myThreadId
             )
     connectionReceiver conn
@@ -227,8 +229,9 @@ openConnection'' connOpts = withSocketsDo $ do
     cClosed <- newMVar Nothing
     writeLock <- newMVar ()
     ccl <- newEmptyMVar
+    cException <- newMVar Nothing
     cClosedHandlers <- newMVar []
-    let conn = Connection handle cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cClosedHandlers lastChanID
+    let conn = Connection handle cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cException cClosedHandlers lastChanID
 
     --spawn the connectionReceiver
     void $ forkIO $ CE.finally (connectionReceiver conn) $ do
@@ -247,7 +250,8 @@ openConnection'' connOpts = withSocketsDo $ do
                 void $ tryPutMVar ccl ()
 
                 -- notify connection-closed-handlers
-                withMVar cClosedHandlers sequence
+                withMVar cException $ \exc ->
+                  withMVar cClosedHandlers (mapM_ ($ exc))
     return conn
   where
     connect ((host, port) : rest) = connectTo host (PortNumber port) `CE.catch` \(_ :: CE.SomeException) -> connect rest
@@ -315,13 +319,13 @@ closeConnection c = do
     readMVar $ connClosedLock c
     return ()
 
--- | @addConnectionClosedHandler conn ifClosed handler@ adds a @handler@ that will be called after the connection is closed (either by calling @closeConnection@ or by an exception). If the @ifClosed@ parameter is True and the connection is already closed, the handler will be called immediately. If @ifClosed == False@ and the connection is already closed, the handler will never be called
-addConnectionClosedHandler :: Connection -> Bool -> IO () -> IO ()
+-- | @addConnectionClosedHandler conn ifClosed handler@ adds a @handler@ that will be called after the connection is closed (either by calling @closeConnection@ or by an exception). If the @ifClosed@ parameter is True and the connection is already closed, the handler will be called immediately without an exception. If @ifClosed == False@ and the connection is already closed, the handler will never be called
+addConnectionClosedHandler :: Connection -> Bool -> (Maybe CE.SomeException -> IO ()) -> IO ()
 addConnectionClosedHandler conn ifClosed handler = do
     withMVar (connClosed conn) $ \cc ->
         case cc of
             -- connection is already closed, so call the handler directly
-            Just _ | ifClosed -> handler
+            Just _ | ifClosed -> handler Nothing
 
             -- otherwise add it to the list
             _ -> modifyMVar_ (connClosedHandlers conn) $ return . (handler:)
