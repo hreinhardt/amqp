@@ -72,9 +72,9 @@ module Network.AMQP (
     declareQueue,
     bindQueue,
     bindQueue',
+    unbindQueue,
     purgeQueue,
     deleteQueue,
-    unbindQueue,
 
     -- * Messaging
     Message(..),
@@ -257,6 +257,17 @@ bindQueue' chan queue exchange routingKey args = do
         ))
     return ()
 
+-- | @unbindQueue chan queue exchange routingKey arguments@ unbinds a queue from an exchange. The @routingKey@ and @arguments@ must be identical to the ones specified when binding the queue.
+unbindQueue :: Channel -> Text -> Text -> Text -> FieldTable -> IO ()
+unbindQueue chan queue exchange routingKey arguments = do
+    SimpleMethod Queue_unbind_ok <- request chan $ SimpleMethod $ Queue_unbind
+        1 -- ticket
+        (ShortString queue)
+        (ShortString exchange)
+        (ShortString routingKey)
+        arguments
+    return ()
+
 -- | remove all messages from the queue; returns the number of messages that were in the queue
 purgeQueue :: Channel -> Text -> IO Word32
 purgeQueue chan queue = do
@@ -278,17 +289,6 @@ deleteQueue chan queue = do
         False -- nowait
         ))
     return msgCount
-
--- | @unbindQueue chan queue exchange routingKey arguments@ unbinds a queue from an exchange. The @routingKey@ and @arguments@ must be identical to the ones specified when binding the queue.
-unbindQueue :: Channel -> Text -> Text -> Text -> FieldTable -> IO ()
-unbindQueue chan queue exchange routingKey arguments = do
-    SimpleMethod Queue_unbind_ok <- request chan $ SimpleMethod $ Queue_unbind
-        1 -- ticket
-        (ShortString queue)
-        (ShortString exchange)
-        (ShortString routingKey)
-        arguments
-    return ()
 
 ----- MSG (the BASIC class in AMQP) -----
 
