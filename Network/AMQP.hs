@@ -64,6 +64,8 @@ module Network.AMQP (
     declareExchange,
     bindExchange,
     bindExchange',
+    unbindExchange,
+    unbindExchange',
     deleteExchange,
 
     -- * Queues
@@ -189,6 +191,23 @@ bindExchange' chan destinationName sourceName routingKey args = do
         False -- nowait
         args -- arguments
         ))
+    return ()
+
+-- | @unbindExchange chan destinationName sourceName routingKey@ unbinds an exchange from an exchange. The @routingKey@ must be identical to the one specified when binding the exchange.
+unbindExchange :: Channel -> Text -> Text -> Text -> IO ()
+unbindExchange chan destinationName sourceName routingKey =
+  unbindExchange' chan destinationName sourceName routingKey (FieldTable M.empty)
+
+-- | an extended version of @unbindExchange@ that allows you to include arguments. The @arguments@ must be identical to the ones specified when binding the exchange.
+unbindExchange' :: Channel -> Text -> Text -> Text -> FieldTable -> IO ()
+unbindExchange' chan destinationName sourceName routingKey args = do
+    SimpleMethod Exchange_unbind_ok <- request chan $ SimpleMethod $ Exchange_unbind
+        1 -- ticket
+        (ShortString destinationName)
+        (ShortString sourceName)
+        (ShortString routingKey)
+        False -- nowait
+        args
     return ()
 
 -- | deletes the exchange with the provided name
