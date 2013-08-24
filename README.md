@@ -12,6 +12,7 @@ Changelog
 * new function consumeMsgs' which allows you to pass in a field-table
 * new function bindExchange allows for binding an exchange to another exchange
 * new function unbindQueue allows unbinding a queue from an exchange
+* new function unbindExchange allows unbinding an exchange from an exchange
 
 ### Version 0.4.3
 
