@@ -56,6 +56,7 @@ module Network.AMQP (
     -- * Channel
     Channel,
     openChannel,
+    addReturnListener,
     qos,
 
     -- * Exchanges
@@ -82,6 +83,8 @@ module Network.AMQP (
     -- * Messaging
     Message(..),
     DeliveryMode(..),
+    PublishError(..),
+    ReturnReplyCode(..),
     newMsg,
     Envelope(..),
     ConsumerTag,
@@ -90,6 +93,7 @@ module Network.AMQP (
     consumeMsgs',
     cancelConsumer,
     publishMsg,
+    publishMsg',
     getMsg,
     rejectMsg,
     recoverMsgs,
@@ -136,7 +140,6 @@ import Network.AMQP.Generated
 
 {-
 TODO:
-- handle basic.return
 - connection.secure
 -}
 
@@ -367,17 +370,21 @@ cancelConsumer chan consumerTag = do
     --unregister the consumer
     modifyMVar_ (consumers chan) $ return . M.delete consumerTag
 
--- | @publishMsg chan exchange routingKey msg@ publishes @msg@ to the exchange with the provided @exchange@. The effect of @routingKey@ depends on the type of the exchange
+-- | @publishMsg chan exchange routingKey msg@ publishes @msg@ to the exchange with the provided @exchange@. The effect of @routingKey@ depends on the type of the exchange.
 --
--- NOTE: This method may temporarily block if the AMQP server requested us to stop sending content data (using the flow control mechanism). So don't rely on this method returning immediately
+-- NOTE: This method may temporarily block if the AMQP server requested us to stop sending content data (using the flow control mechanism). So don't rely on this method returning immediately.
 publishMsg :: Channel -> Text -> Text -> Message -> IO ()
-publishMsg chan exchange routingKey msg = do
+publishMsg chan exchange routingKey msg = publishMsg' chan exchange routingKey False msg
+
+-- | Like 'publishMsg', but additionally allows you to specify whether the 'mandatory' flag should be set.
+publishMsg' :: Channel -> Text -> Text -> Bool -> Message -> IO ()
+publishMsg' chan exchange routingKey mandatory msg = do
     writeAssembly chan (ContentMethod (Basic_publish
             1 -- ticket; ignored by rabbitMQ
             (ShortString exchange)
             (ShortString routingKey)
-            False -- mandatory; if true, the server might return the msg, which is currently not handled
-            False) --immediate; if true, the server might return the msg, which is currently not handled
+            mandatory -- mandatory; if true, the server might return the msg, which is currently not handled
+            False) --immediate; not customizable, as it is currently not supported anymore by RabbitMQ
 
             --TODO: add more of these to 'Message'
             (CHBasic
@@ -503,6 +510,20 @@ data Envelope = Envelope
 data DeliveryMode = Persistent -- ^ the message will survive server restarts (if the queue is durable)
                   | NonPersistent -- ^ the message may be lost after server restarts
     deriving (Eq, Ord, Read, Show)
+
+data PublishError = PublishError
+                  {
+                    errReplyCode :: ReturnReplyCode,
+                    errExchange :: Maybe Text,
+                    errRoutingKey :: Text
+                  }
+    deriving (Eq, Read, Show)
+
+data ReturnReplyCode = Unroutable Text
+                     | NoConsumers Text
+                     | NotFound Text
+
+    deriving (Eq, Read, Show)
 
 deliveryModeToInt :: DeliveryMode -> Octet
 deliveryModeToInt NonPersistent = 1
@@ -753,7 +774,8 @@ data Channel = Channel {
 
                     chanActive :: Lock, -- used for flow-control. if lock is closed, no content methods will be sent
                     chanClosed :: MVar (Maybe String),
-                    consumers :: MVar (M.Map Text ((Message, Envelope) -> IO ())) -- who is consumer of a queue? (consumerTag => callback)
+                    consumers :: MVar (M.Map Text ((Message, Envelope) -> IO ())), -- who is consumer of a queue? (consumerTag => callback)
+                    returnListeners :: MVar ([(Message, PublishError) -> IO ()])
                 }
 
 msgFromContentHeaderProperties :: ContentHeaderProperties -> BL.ByteString -> Message
@@ -821,11 +843,27 @@ channelReceiver chan = do
         -- in theory we should respond with flow_ok but rabbitMQ 1.7 ignores that, so it doesn't matter
         return ()
     --Basic.return
-    handleAsync (ContentMethod (Basic_return _ _ _ _) _ _) =
-        --TODO: implement handling
-        -- this won't be called currently, because publishMsg sets "mandatory" and "immediate" to false
-        putStrLn ("BASIC.RETURN not implemented" :: String)
+    handleAsync (ContentMethod basicReturn@(Basic_return _ _ _ _) props body) = do
+        let msg      = msgFromContentHeaderProperties props body
+            pubError = basicReturnToPublishError basicReturn
+        withMVar (returnListeners chan) $ \listeners ->
+            forM_ listeners $ \l -> CE.catch (l (msg, pubError)) $ \(ex :: CE.SomeException) ->
+                putStrLn $ "return listener on channel ["++(show $ channelID chan)++"] handling error ["++show pubError++"] threw exception: "++show ex
     handleAsync m = error ("Unknown method: " ++ show m)
+
+    basicReturnToPublishError (Basic_return code (ShortString errText) (ShortString exchange) (ShortString routingKey)) =
+        let replyError = case code of
+                312 -> Unroutable errText
+                313 -> NoConsumers errText
+                404 -> NotFound errText
+                num -> error $ "unexpected return error code: " ++ (show num)
+            pubError = PublishError replyError (Just exchange) routingKey
+        in pubError
+
+-- | registers a callback function that is called whenever a message is returned from the broker ('basic.return').
+addReturnListener :: Channel -> ((Message, PublishError) -> IO ()) -> IO ()
+addReturnListener chan listener = do
+    modifyMVar_ (returnListeners chan) $ \listeners -> return $ listener:listeners
 
 -- closes the channel internally; but doesn't tell the server
 closeChannel' :: Channel -> Text -> IO ()
@@ -858,11 +896,12 @@ openChannel c = do
 
     closed <- newMVar Nothing
     conss <- newMVar M.empty
+    listeners <- newMVar []
 
     --get a new unused channelID
     newChannelID <- modifyMVar (lastChannelID c) $ \x -> return (x+1, x+1)
 
-    let newChannel = Channel c newInQueue outRes (fromIntegral newChannelID) lastConsTag ca closed conss
+    let newChannel = Channel c newInQueue outRes (fromIntegral newChannelID) lastConsTag ca closed conss listeners
 
     thrID <- forkIO $ CE.finally (channelReceiver newChannel)
         (closeChannel' newChannel "closed")
