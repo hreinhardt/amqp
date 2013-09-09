@@ -705,7 +705,7 @@ openConnection' host port vhost loginName loginPassword = withSocketsDo $ do
     start_ok = (Frame 0 (MethodPayload (Connection_start_ok (FieldTable M.empty)
         (ShortString "AMQPLAIN")
         --login has to be a table without first 4 bytes
-        (LongString $ T.pack $ drop 4 $ BL.unpack $ runPut $ put $ FieldTable $ M.fromList [("LOGIN",FVString loginName), ("PASSWORD", FVString loginPassword)])
+        (LongString $ runPut $ put $ FieldTable $ M.fromList [("LOGIN",FVShortString loginName), ("PASSWORD", FVShortString loginPassword)])
         (ShortString "en_US")) ))
     open = (Frame 0 (MethodPayload (Connection_open
         (ShortString vhost)  --virtual host

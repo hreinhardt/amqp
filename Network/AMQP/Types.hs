@@ -25,10 +25,10 @@ import Data.Binary.Put
 import Data.Char
 import Data.Text (Text)
 
-import qualified Data.ByteString.Char8 as BS
-import qualified Data.ByteString.Lazy.Char8 as BL
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map as M
-import qualified Data.Text.Encoding as T
+import qualified Data.Text.Encoding as E
 
 -- performs runGet on a bytestring until the string is empty
 readMany :: (Show a, Binary a) => BL.ByteString -> [a]
@@ -63,28 +63,27 @@ instance Binary ShortString where
     get = do
       len <- getWord8
       dat <- getByteString (fromIntegral len)
-      return $ ShortString $ T.decodeUtf8 dat
+      return $ ShortString $ E.decodeUtf8 dat
 
     put (ShortString x) = do
-        let s = T.encodeUtf8 x
-        if BS.length s > 255
+        let s = E.encodeUtf8 x
+        if B.length s > 255
             then error "cannot encode ShortString with length > 255"
             else do
-                putWord8 $ fromIntegral (BS.length s)
+                putWord8 $ fromIntegral (B.length s)
                 putByteString s
 
-newtype LongString = LongString Text
+newtype LongString = LongString BL.ByteString
     deriving (Eq, Ord, Read, Show)
 instance Binary LongString where
     get = do
       len <- getWord32be
-      dat <- getByteString (fromIntegral len)
-      return $ LongString $ T.decodeUtf8 dat
+      dat <- getLazyByteString (fromIntegral len)
+      return $ LongString dat
 
     put (LongString x) = do
-        let s = T.encodeUtf8 x
-        putWord32be $ fromIntegral (BS.length s)
-        putByteString s
+        putWord32be $ fromIntegral (BL.length x)
+        putLazyByteString x
 
 type Timestamp = Word64
 
@@ -118,12 +117,13 @@ data FieldValue = FVBool Bool
                 | FVFloat Float
                 | FVDouble Double
                 | FVDecimal DecimalValue
-                | FVString Text
+                | FVShortString Text
+                | FVLongString BL.ByteString
                 | FVFieldArray [FieldValue]
                 | FVTimestamp Timestamp
                 | FVFieldTable FieldTable
                 | FVVoid
-                | FVByteArray BS.ByteString
+                | FVByteArray B.ByteString
     deriving (Eq, Ord, Read, Show)
 
 instance Binary FieldValue where
@@ -132,15 +132,18 @@ instance Binary FieldValue where
         case chr $ fromIntegral fieldType of
             't' -> FVBool <$> get
             'b' -> FVInt8 <$> get
-            's' -> FVInt16 <$> get
+            'U' -> FVInt16 <$> get
             'I' -> FVInt32 <$> get
-            'l' -> FVInt64 <$> get
+            'L' -> FVInt64 <$> get
             'f' -> FVFloat <$> getFloat32be
             'd' -> FVDouble <$> getFloat64be
             'D' -> FVDecimal <$> get
+            's' -> do
+                ShortString x <- get :: Get ShortString
+                return $ FVShortString x
             'S' -> do
                 LongString x <- get :: Get LongString
-                return $ FVString x
+                return $ FVLongString x
             'A' -> do
                 len <- get :: Get Int32
                 if len > 0
@@ -159,13 +162,14 @@ instance Binary FieldValue where
 
     put (FVBool x) = put 't' >> put x
     put (FVInt8 x) = put 'b' >> put x
-    put (FVInt16 x) = put 's' >> put x
+    put (FVInt16 x) = put 'U' >> put x
     put (FVInt32 x) = put 'I' >> put x
-    put (FVInt64 x) = put 'l' >> put x
+    put (FVInt64 x) = put 'L' >> put x
     put (FVFloat x) = put 'f' >> putFloat32be x
     put (FVDouble x) = put 'd' >> putFloat64be x
     put (FVDecimal x) = put 'D' >> put x
-    put (FVString x) = put 'S' >> put (LongString x)
+    put (FVShortString x) = put 's' >> put (ShortString x)
+    put (FVLongString x) = put 'S' >> put (LongString x)
     put (FVFieldArray x) = do
         put 'A'
         if length x == 0
@@ -179,7 +183,7 @@ instance Binary FieldValue where
     put (FVVoid) = put 'V'
     put (FVByteArray x) = do
         put 'x'
-        let len = fromIntegral (BS.length x) :: Word32
+        let len = fromIntegral (B.length x) :: Word32
         put len
         putByteString x
 
