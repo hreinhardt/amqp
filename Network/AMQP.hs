@@ -50,6 +50,7 @@ module Network.AMQP (
     Connection,
     openConnection,
     openConnection',
+    openConnection'',
     closeConnection,
     addConnectionClosedHandler,
 
@@ -109,6 +110,12 @@ module Network.AMQP (
     -- * Flow Control
     flow,
 
+    -- * SASL
+    SASLMechanism(..),
+    plain,
+    amqplain,
+    rabbitCRdemo,
+
     -- * Exceptions
     AMQPException(..)
 ) where
@@ -125,13 +132,15 @@ import Network
 import System.IO
 
 import qualified Control.Exception as CE
-import qualified Data.ByteString.Char8 as BS
-import qualified Data.ByteString.Lazy.Char8 as BL
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BC
+import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map as M
 import qualified Data.Foldable as F
 import qualified Data.IntMap as IM
 import qualified Data.Sequence as Seq
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as E
 
 import Network.AMQP.Protocol
 import Network.AMQP.Types
@@ -140,7 +149,6 @@ import Network.AMQP.Generated
 
 {-
 TODO:
-- connection.secure
 -}
 
 ----- EXCHANGE -----
@@ -608,6 +616,36 @@ data Connection = Connection {
                     lastChannelID :: MVar Int --for auto-incrementing the channelIDs
                 }
 
+-- | A 'SASLMechanism' is described by its name ('saslName'), its initial response ('saslInitialResponse'), and an optional function ('saslChallengeFunc') that
+-- transforms a security challenge provided by the server into response, which is then sent back to the server for verification.
+data SASLMechanism = SASLMechanism {
+                        saslName :: !Text, -- ^ mechanism name
+                        saslInitialResponse :: !BS.ByteString, -- ^ initial response
+                        saslChallengeFunc :: !(Maybe (BS.ByteString -> IO BS.ByteString)) -- ^ challenge processing function
+                    }
+
+-- | The @PLAIN@ SASL mechanism. See <http://tools.ietf.org/html/rfc4616 RFC4616>
+plain :: Text -> Text -> SASLMechanism
+plain loginName loginPassword = SASLMechanism "PLAIN" initialResponse Nothing
+  where
+    nul = '\0'
+    initialResponse = E.encodeUtf8 $ (T.cons nul loginName) `T.append` (T.cons nul loginPassword)
+
+-- | The @AMQPLAIN@ SASL mechanism. See <http://www.rabbitmq.com/authentication.html>.
+amqplain :: Text -> Text -> SASLMechanism
+amqplain loginName loginPassword = SASLMechanism "AMQPLAIN" initialResponse Nothing
+  where
+    initialResponse = BL.toStrict $ BL.drop 4 $ runPut $ put $ FieldTable $ M.fromList [("LOGIN",FVString loginName), ("PASSWORD", FVString loginPassword)]
+
+-- | The @RABBIT-CR-DEMO@ SASL mechanism needs to be explicitly enabled on the RabbitMQ server and should only be used for demonstration purposes of the challenge-response cycle.
+-- See <http://www.rabbitmq.com/authentication.html>.
+rabbitCRdemo :: Text -> Text -> SASLMechanism
+rabbitCRdemo loginName loginPassword = SASLMechanism "RABBIT-CR-DEMO" initialResponse (Just $ const challengeResponse)
+  where
+    initialResponse = E.encodeUtf8 loginName
+    challengeResponse = return $ (E.encodeUtf8 "My password is ") `BS.append` (E.encodeUtf8 loginPassword)
+
+
 -- | reads incoming frames from socket and forwards them to the opened channels
 connectionReceiver :: Connection -> IO ()
 connectionReceiver conn = do
@@ -635,16 +673,22 @@ connectionReceiver conn = do
 --
 -- You must call 'closeConnection' before your program exits to ensure that all published messages are received by the server.
 --
+-- The @loginName@ and @loginPassword@ will be used to authenticate via the 'PLAIN' SASL mechanism.
+--
 -- NOTE: If the login name, password or virtual host are invalid, this method will throw a 'ConnectionClosedException'. The exception will not contain a reason why the connection was closed, so you'll have to find out yourself.
 openConnection :: String -> Text -> Text -> Text -> IO Connection
 openConnection host = openConnection' host 5672
 
 -- | same as 'openConnection' but allows you to specify a non-default port-number as the 2nd parameter
 openConnection' :: String -> PortNumber -> Text -> Text -> Text -> IO Connection
-openConnection' host port vhost loginName loginPassword = withSocketsDo $ do
+openConnection' host port vhost loginName loginPassword = openConnection'' host port vhost [plain loginName loginPassword]
+
+-- | same as 'openConnection'' but allows you to specify a list of 'SASLMechanism's. The first mechanism that is supported by the server will be used for authentication.
+openConnection'' :: String -> PortNumber -> Text -> [SASLMechanism] -> IO Connection
+openConnection'' host port vhost clientMechanisms = withSocketsDo $ do
     handle <- connectTo host $ PortNumber port
     BL.hPut handle $ BPut.runPut $ do
-        BPut.putByteString $ BS.pack "AMQP"
+        BPut.putByteString $ BC.pack "AMQP"
         BPut.putWord8 1
         BPut.putWord8 1 --TCP/IP
         BPut.putWord8 0 --Major Version
@@ -652,12 +696,13 @@ openConnection' host port vhost loginName loginPassword = withSocketsDo $ do
     hFlush handle
 
     -- S: connection.start
-    Frame 0 (MethodPayload (Connection_start _ _ _ _ _)) <- readFrame handle
+    Frame 0 (MethodPayload (Connection_start _ _ _ (LongString serverMechanisms) _)) <- readFrame handle
+    selectedSASL <- selectSASLMechanism handle serverMechanisms
 
     -- C: start_ok
-    writeFrame handle start_ok
-    -- S: tune
-    Frame 0 (MethodPayload (Connection_tune _ frame_max _)) <- readFrame handle
+    writeFrame handle $ start_ok selectedSASL
+    -- S: secure or tune
+    Frame 0 (MethodPayload (Connection_tune _ frame_max _)) <- handleSecureUntilTune handle selectedSASL
     -- C: tune_ok
     let maxFrameSize = (min 131072 frame_max)
 
@@ -703,16 +748,42 @@ openConnection' host port vhost loginName loginPassword = withSocketsDo $ do
                 )
     return conn
   where
-    start_ok = (Frame 0 (MethodPayload (Connection_start_ok (FieldTable M.empty)
-        (ShortString "AMQPLAIN")
-        --login has to be a table without first 4 bytes
-        (LongString $ BL.toStrict $ BL.drop 4 $ runPut $ put $ FieldTable $ M.fromList [("LOGIN",FVString loginName), ("PASSWORD", FVString loginPassword)])
+    selectSASLMechanism handle serverMechanisms =
+        let serverSaslList = T.split (== ' ') $ E.decodeUtf8 serverMechanisms
+            clientSaslList = map saslName clientMechanisms
+            maybeSasl = F.find (\(SASLMechanism name _ _) -> elem name serverSaslList) clientMechanisms
+        in abortIfNothing maybeSasl handle
+            ("None of the provided SASL mechanisms "++show clientSaslList++" is supported by the server "++show serverSaslList++".")
+
+    start_ok sasl = (Frame 0 (MethodPayload (Connection_start_ok (FieldTable M.empty)
+        (ShortString $ saslName sasl)
+        (LongString $ saslInitialResponse sasl)
         (ShortString "en_US")) ))
+
+    handleSecureUntilTune handle sasl = do
+        tuneOrSecure <- readFrame handle
+        case tuneOrSecure of
+            Frame 0 (MethodPayload (Connection_secure (LongString challenge))) -> do
+                processChallenge <- abortIfNothing (saslChallengeFunc sasl)
+                    handle $ "The server provided a challenge, but the selected SASL mechanism "++show (saslName sasl)++" is not equipped with a challenge processing function."
+                challengeResponse <- processChallenge challenge
+                writeFrame handle (Frame 0 (MethodPayload (Connection_secure_ok (LongString challengeResponse))))
+                handleSecureUntilTune handle sasl
+
+            tune@(Frame 0 (MethodPayload (Connection_tune _ _ _))) -> return tune
+
     open = (Frame 0 (MethodPayload (Connection_open
         (ShortString vhost)  --virtual host
         (ShortString $ T.pack "") -- capabilities; deprecated in 0-9-1
         True))) -- insist; deprecated in 0-9-1
 
+    abortHandshake handle msg = do
+        hClose handle
+        CE.throwIO $ ConnectionClosedException msg
+
+    abortIfNothing m handle msg = case m of
+        Nothing -> abortHandshake handle msg
+        Just a  -> return a
 -- | closes a connection
 --
 -- Make sure to call this function before your program exits to ensure that all published messages are received by the server.
