@@ -25,8 +25,8 @@ import Data.Binary.Put
 import Data.Char
 import Data.Text (Text)
 
-import qualified Data.ByteString.Char8 as BS
-import qualified Data.ByteString.Lazy.Char8 as BL
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map as M
 import qualified Data.Text.Encoding as T
 
@@ -73,18 +73,17 @@ instance Binary ShortString where
                 putWord8 $ fromIntegral (BS.length s)
                 putByteString s
 
-newtype LongString = LongString Text
+newtype LongString = LongString BS.ByteString
     deriving (Eq, Ord, Read, Show)
 instance Binary LongString where
     get = do
       len <- getWord32be
       dat <- getByteString (fromIntegral len)
-      return $ LongString $ T.decodeUtf8 dat
+      return $ LongString dat
 
     put (LongString x) = do
-        let s = T.encodeUtf8 x
-        putWord32be $ fromIntegral (BS.length s)
-        putByteString s
+        putWord32be $ fromIntegral (BS.length x)
+        putByteString x
 
 type Timestamp = Word64
 
@@ -140,7 +139,7 @@ instance Binary FieldValue where
             'D' -> FVDecimal <$> get
             'S' -> do
                 LongString x <- get :: Get LongString
-                return $ FVString x
+                return $ FVString $ T.decodeUtf8 x
             'A' -> do
                 len <- get :: Get Int32
                 if len > 0
@@ -165,7 +164,7 @@ instance Binary FieldValue where
     put (FVFloat x) = put 'f' >> putFloat32be x
     put (FVDouble x) = put 'd' >> putFloat64be x
     put (FVDecimal x) = put 'D' >> put x
-    put (FVString x) = put 'S' >> put (LongString x)
+    put (FVString x) = put 'S' >> put (LongString $ T.encodeUtf8 x)
     put (FVFieldArray x) = do
         put 'A'
         if length x == 0
