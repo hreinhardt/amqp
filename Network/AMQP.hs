@@ -649,6 +649,7 @@ openConnection' host port vhost loginName loginPassword = withSocketsDo $ do
         BPut.putWord8 1 --TCP/IP
         BPut.putWord8 0 --Major Version
         BPut.putWord8 9 --Minor Version
+    hFlush handle
 
     -- S: connection.start
     Frame 0 (MethodPayload (Connection_start _ _ _ _ _)) <- readFrame handle
@@ -759,7 +760,9 @@ readFrame handle = do
         Right (_, _, frame) -> return frame
 
 writeFrame :: Handle -> Frame -> IO ()
-writeFrame handle = BL.hPut handle . runPut . put
+writeFrame handle f = do
+    BL.hPut handle . runPut . put $ f
+    hFlush handle
 
 ------------------------ CHANNEL -----------------------------
 
