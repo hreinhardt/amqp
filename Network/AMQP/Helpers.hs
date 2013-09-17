@@ -33,3 +33,7 @@ killLock :: Lock -> IO Bool
 killLock (Lock a b) = do
     modifyMVar_ a $ const (return True)
     tryPutMVar b ()
+
+chooseMin :: Ord a => a -> Maybe a -> a
+chooseMin a (Just b) = min a b
+chooseMin a Nothing  = a
