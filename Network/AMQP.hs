@@ -48,6 +48,8 @@
 module Network.AMQP (
     -- * Connection
     Connection,
+    ConnectionOpts(..),
+    defaultConnectionOpts,
     openConnection,
     openConnection',
     openConnection'',
@@ -616,6 +618,32 @@ data Connection = Connection {
                     lastChannelID :: MVar Int --for auto-incrementing the channelIDs
                 }
 
+-- | Represents the parameters to connect to a broker or a cluster of brokers.
+-- See 'defaultConnectionOpts'.
+--
+-- /NOTICE/: The fields 'coHeartbeatDelay' and 'coMaxChannel' were only added for future use, as the respective functionality is not yet implemented.
+data ConnectionOpts = ConnectionOpts {
+                            coServers :: ![(String, PortNumber)], -- ^ A list of host-port pairs. Useful in a clustered setup to connect to the first available host.
+                            coVHost :: !Text, -- ^ The VHost to connect to.
+                            coAuth :: ![SASLMechanism], -- ^ The 'SASLMechanism's to use for authenticating with the broker.
+                            coMaxFrameSize :: !(Maybe Word32), -- ^ The maximum frame size to be used. If not specified, no limit is assumed.
+                            coHeartbeatDelay :: !(Maybe Word16), -- ^ The delay in seconds, after which the client expects a heartbeat frame from the broker. If not specified, no heartbeat is expected.
+                            coMaxChannel :: !(Maybe Word16) -- ^ The maximum number of channels the client will use.
+                        }
+
+-- | Constructs default connection options with the following settings :
+--
+--     * Broker: @amqp:\/\/guest:guest\@localhost:5672\/%2F@ using the @PLAIN@ SASL mechanism
+--
+--     * max frame size: @131072@
+--
+--     * no heartbeat expected from the server
+--
+--     * no limit on the number of used channels
+--
+defaultConnectionOpts :: ConnectionOpts
+defaultConnectionOpts = ConnectionOpts [("localhost", 5672)] "/" [plain "guest" "guest"] (Just 131072) Nothing Nothing
+
 -- | A 'SASLMechanism' is described by its name ('saslName'), its initial response ('saslInitialResponse'), and an optional function ('saslChallengeFunc') that
 -- transforms a security challenge provided by the server into response, which is then sent back to the server for verification.
 data SASLMechanism = SASLMechanism {
@@ -681,12 +709,16 @@ openConnection host = openConnection' host 5672
 
 -- | same as 'openConnection' but allows you to specify a non-default port-number as the 2nd parameter
 openConnection' :: String -> PortNumber -> Text -> Text -> Text -> IO Connection
-openConnection' host port vhost loginName loginPassword = openConnection'' host port vhost [plain loginName loginPassword]
+openConnection' host port vhost loginName loginPassword = openConnection'' $ defaultConnectionOpts {
+    coServers = [(host, port)],
+    coVHost   = vhost,
+    coAuth    = [plain loginName loginPassword]
+}
 
--- | same as 'openConnection'' but allows you to specify a list of 'SASLMechanism's. The first mechanism that is supported by the server will be used for authentication.
-openConnection'' :: String -> PortNumber -> Text -> [SASLMechanism] -> IO Connection
-openConnection'' host port vhost clientMechanisms = withSocketsDo $ do
-    handle <- connectTo host $ PortNumber port
+-- | Opens a connection to a broker specified by the given 'ConnectionOpts' parameter.
+openConnection'' :: ConnectionOpts -> IO Connection
+openConnection'' connOpts = withSocketsDo $ do
+    handle <- connect $ coServers connOpts
     BL.hPut handle $ BPut.runPut $ do
         BPut.putByteString $ BC.pack "AMQP"
         BPut.putWord8 1
@@ -704,7 +736,7 @@ openConnection'' host port vhost clientMechanisms = withSocketsDo $ do
     -- S: secure or tune
     Frame 0 (MethodPayload (Connection_tune _ frame_max _)) <- handleSecureUntilTune handle selectedSASL
     -- C: tune_ok
-    let maxFrameSize = (min 131072 frame_max)
+    let maxFrameSize = chooseMin frame_max $ coMaxFrameSize connOpts
 
     writeFrame handle (Frame 0 (MethodPayload
         --TODO: handle channel_max
@@ -748,8 +780,18 @@ openConnection'' host port vhost clientMechanisms = withSocketsDo $ do
                 )
     return conn
   where
+    connect ((host, port) : rest) = do
+        result <- CE.try (connectTo host $ PortNumber port)
+        either
+            (\(ex :: CE.SomeException) -> do
+                putStrLn $ "Error connecting to "++show (host, port)++": "++show ex
+                connect rest)
+            (return)
+            result
+    connect [] = CE.throwIO $ ConnectionClosedException $ "Could not connect to any of the provided brokers: " ++ show (coServers connOpts)
     selectSASLMechanism handle serverMechanisms =
         let serverSaslList = T.split (== ' ') $ E.decodeUtf8 serverMechanisms
+            clientMechanisms = coAuth connOpts
             clientSaslList = map saslName clientMechanisms
             maybeSasl = F.find (\(SASLMechanism name _ _) -> elem name serverSaslList) clientMechanisms
         in abortIfNothing maybeSasl handle
@@ -773,7 +815,7 @@ openConnection'' host port vhost clientMechanisms = withSocketsDo $ do
             tune@(Frame 0 (MethodPayload (Connection_tune _ _ _))) -> return tune
 
     open = (Frame 0 (MethodPayload (Connection_open
-        (ShortString vhost)  --virtual host
+        (ShortString $ coVHost connOpts)
         (ShortString $ T.pack "") -- capabilities; deprecated in 0-9-1
         True))) -- insist; deprecated in 0-9-1
 
@@ -784,6 +826,7 @@ openConnection'' host port vhost clientMechanisms = withSocketsDo $ do
     abortIfNothing m handle msg = case m of
         Nothing -> abortHandshake handle msg
         Just a  -> return a
+
 -- | closes a connection
 --
 -- Make sure to call this function before your program exits to ensure that all published messages are received by the server.
