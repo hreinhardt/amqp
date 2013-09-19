@@ -6,6 +6,12 @@ Library for accessing RabbitMQ from Haskell. Please see the [Hackage docs](http:
 Changelog
 =========
 
+### Version 0.6.0 (unreleased)
+
+* new function addReturnListener which allows specifying a handler for returned messages
+* new function openConnection'' with support for most AMQP connection options
+* better error messages on failed connection handshakes
+
 ### Version 0.5.0
 
 * support for AMQP 0-9-1
