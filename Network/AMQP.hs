@@ -677,8 +677,14 @@ rabbitCRdemo loginName loginPassword = SASLMechanism "RABBIT-CR-DEMO" initialRes
 -- | reads incoming frames from socket and forwards them to the opened channels
 connectionReceiver :: Connection -> IO ()
 connectionReceiver conn = do
-    Frame chanID payload <- readFrame (connHandle conn)
-    forwardToChannel chanID payload
+    CE.catch (do
+        Frame chanID payload <- readFrame (connHandle conn)
+        forwardToChannel chanID payload
+        )
+        (\(e :: CE.IOException) -> do
+            modifyMVar_ (connClosed conn) $ const $ return $ Just $ show e
+            killThread =<< myThreadId
+            )
     connectionReceiver conn
   where
     forwardToChannel 0 (MethodPayload Connection_close_ok) = do
@@ -719,36 +725,38 @@ openConnection' host port vhost loginName loginPassword = openConnection'' $ def
 openConnection'' :: ConnectionOpts -> IO Connection
 openConnection'' connOpts = withSocketsDo $ do
     handle <- connect $ coServers connOpts
-    BL.hPut handle $ BPut.runPut $ do
-        BPut.putByteString $ BC.pack "AMQP"
-        BPut.putWord8 1
-        BPut.putWord8 1 --TCP/IP
-        BPut.putWord8 0 --Major Version
-        BPut.putWord8 9 --Minor Version
-    hFlush handle
+    maxFrameSize <- CE.handle (\(_ :: CE.IOException) -> CE.throwIO $ ConnectionClosedException "Handshake failed. Please check the RabbitMQ logs for more information") $ do
+        BL.hPut handle $ BPut.runPut $ do
+            BPut.putByteString $ BC.pack "AMQP"
+            BPut.putWord8 1
+            BPut.putWord8 1 --TCP/IP
+            BPut.putWord8 0 --Major Version
+            BPut.putWord8 9 --Minor Version
+        hFlush handle
 
-    -- S: connection.start
-    Frame 0 (MethodPayload (Connection_start _ _ _ (LongString serverMechanisms) _)) <- readFrame handle
-    selectedSASL <- selectSASLMechanism handle serverMechanisms
+        -- S: connection.start
+        Frame 0 (MethodPayload (Connection_start _ _ _ (LongString serverMechanisms) _)) <- readFrame handle
+        selectedSASL <- selectSASLMechanism handle serverMechanisms
 
-    -- C: start_ok
-    writeFrame handle $ start_ok selectedSASL
-    -- S: secure or tune
-    Frame 0 (MethodPayload (Connection_tune _ frame_max _)) <- handleSecureUntilTune handle selectedSASL
-    -- C: tune_ok
-    let maxFrameSize = chooseMin frame_max $ coMaxFrameSize connOpts
+        -- C: start_ok
+        writeFrame handle $ start_ok selectedSASL
+        -- S: secure or tune
+        Frame 0 (MethodPayload (Connection_tune _ frame_max _)) <- handleSecureUntilTune handle selectedSASL
+        -- C: tune_ok
+        let maxFrameSize = chooseMin frame_max $ coMaxFrameSize connOpts
 
-    writeFrame handle (Frame 0 (MethodPayload
-        --TODO: handle channel_max
-        (Connection_tune_ok 0 maxFrameSize 0)
-        ))
-    -- C: open
-    writeFrame handle open
+        writeFrame handle (Frame 0 (MethodPayload
+            --TODO: handle channel_max
+            (Connection_tune_ok 0 maxFrameSize 0)
+            ))
+        -- C: open
+        writeFrame handle open
 
-    -- S: open_ok
-    Frame 0 (MethodPayload (Connection_open_ok _)) <- readFrame handle
+        -- S: open_ok
+        Frame 0 (MethodPayload (Connection_open_ok _)) <- readFrame handle
 
-    -- Connection established!
+        -- Connection established!
+        return maxFrameSize
 
     --build Connection object
     cChannels <- newMVar IM.empty
