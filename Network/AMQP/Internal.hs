@@ -254,7 +254,7 @@ openConnection'' connOpts = withSocketsDo $ do
         result <- CE.try (connectTo host $ PortNumber port)
         either
             (\(ex :: CE.SomeException) -> do
-                putStrLn $ "Error connecting to "++show (host, port)++": "++show ex
+                putStrLn $ "Error connecting to " ++ show (host, port) ++ ": " ++ show ex
                 connect rest)
             (return)
             result
@@ -264,8 +264,8 @@ openConnection'' connOpts = withSocketsDo $ do
             clientMechanisms = coAuth connOpts
             clientSaslList = map saslName clientMechanisms
             maybeSasl = F.find (\(SASLMechanism name _ _) -> elem name serverSaslList) clientMechanisms
-        in abortIfNothing maybeSasl handle
-            ("None of the provided SASL mechanisms "++show clientSaslList++" is supported by the server "++show serverSaslList++".")
+        in abortIfNothing maybeSasl handle $
+             "None of the provided SASL mechanisms " ++ show clientSaslList ++ " is supported by the server " ++ show serverSaslList ++ "."
 
     start_ok sasl = (Frame 0 (MethodPayload (Connection_start_ok (FieldTable M.empty)
         (ShortString $ saslName sasl)
@@ -277,13 +277,13 @@ openConnection'' connOpts = withSocketsDo $ do
         case tuneOrSecure of
             Frame 0 (MethodPayload (Connection_secure (LongString challenge))) -> do
                 processChallenge <- abortIfNothing (saslChallengeFunc sasl)
-                    handle $ "The server provided a challenge, but the selected SASL mechanism "++show (saslName sasl)++" is not equipped with a challenge processing function."
+                    handle $ "The server provided a challenge, but the selected SASL mechanism " ++ show (saslName sasl) ++ " is not equipped with a challenge processing function."
                 challengeResponse <- processChallenge challenge
                 writeFrame handle (Frame 0 (MethodPayload (Connection_secure_ok (LongString challengeResponse))))
                 handleSecureUntilTune handle sasl
 
             tune@(Frame 0 (MethodPayload (Connection_tune _ _ _))) -> return tune
-            x -> error $ "handleSecureUntilTune fail. received message: "++show x
+            x -> error ("handleSecureUntilTune fail. received message: " ++ show x)
 
     open = (Frame 0 (MethodPayload (Connection_open
         (ShortString $ coVHost connOpts)
@@ -439,7 +439,7 @@ channelReceiver chan = do
             pubError = basicReturnToPublishError basicReturn
         withMVar (returnListeners chan) $ \listeners ->
             forM_ listeners $ \l -> CE.catch (l (msg, pubError)) $ \(ex :: CE.SomeException) ->
-                putStrLn $ "return listener on channel ["++(show $ channelID chan)++"] handling error ["++show pubError++"] threw exception: "++show ex
+                putStrLn $ "return listener on channel [" ++ show (channelID chan) ++ "] handling error [" ++ show pubError ++ "] threw exception: " ++ show ex
     handleAsync m = error ("Unknown method: " ++ show m)
 
     basicReturnToPublishError (Basic_return code (ShortString errText) (ShortString exchange) (ShortString routingKey)) =
@@ -450,7 +450,7 @@ channelReceiver chan = do
                 num -> error $ "unexpected return error code: " ++ (show num)
             pubError = PublishError replyError (Just exchange) routingKey
         in pubError
-    basicReturnToPublishError x = error $ "basicReturnToPublishError fail: "++show x
+    basicReturnToPublishError x = error ("basicReturnToPublishError fail: " ++ show x)
 
 -- | registers a callback function that is called whenever a message is returned from the broker ('basic.return').
 addReturnListener :: Channel -> ((Message, PublishError) -> IO ()) -> IO ()
