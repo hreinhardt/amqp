@@ -256,7 +256,7 @@ openConnection'' connOpts = withSocketsDo $ do
             (\(ex :: CE.SomeException) -> do
                 putStrLn $ "Error connecting to " ++ show (host, port) ++ ": " ++ show ex
                 connect rest)
-            (return)
+            return
             result
     connect [] = CE.throwIO $ ConnectionClosedException $ "Could not connect to any of the provided brokers: " ++ show (coServers connOpts)
     selectSASLMechanism handle serverMechanisms =
@@ -447,7 +447,7 @@ channelReceiver chan = do
                 312 -> Unroutable errText
                 313 -> NoConsumers errText
                 404 -> NotFound errText
-                num -> error $ "unexpected return error code: " ++ (show num)
+                num -> error $ "unexpected return error code: " ++ show num
             pubError = PublishError replyError (Just exchange) routingKey
         in pubError
     basicReturnToPublishError x = error ("basicReturnToPublishError fail: " ++ show x)
