@@ -76,6 +76,7 @@ data PublishError = PublishError
 data ReturnReplyCode = Unroutable Text
                      | NoConsumers Text
                      | NotFound Text
+                     | Unknown ShortInt Text
     deriving (Eq, Read, Show)
 
 ------------- ASSEMBLY -------------------------
@@ -446,7 +447,7 @@ channelReceiver chan = do
                 312 -> Unroutable errText
                 313 -> NoConsumers errText
                 404 -> NotFound errText
-                num -> error $ "unexpected return error code: " ++ show num
+                num -> Unknown num errText
             pubError = PublishError replyError (Just exchange) routingKey
         in pubError
     basicReturnToPublishError x = error ("basicReturnToPublishError fail: " ++ show x)
