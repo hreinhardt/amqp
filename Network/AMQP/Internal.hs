@@ -250,15 +250,9 @@ openConnection'' connOpts = withSocketsDo $ do
                 withMVar cClosedHandlers sequence
     return conn
   where
-    connect ((host, port) : rest) = do
-        result <- CE.try (connectTo host $ PortNumber port)
-        either
-            (\(ex :: CE.SomeException) -> do
-                putStrLn ("connect: Error connecting to " ++ show (host, port) ++ ": " ++ show ex)
-                connect rest)
-            return
-            result
+    connect ((host, port) : rest) = connectTo host (PortNumber port) `CE.catch` \(_ :: CE.SomeException) -> connect rest
     connect [] = CE.throwIO $ ConnectionClosedException $ "Could not connect to any of the provided brokers: " ++ show (coServers connOpts)
+
     selectSASLMechanism handle serverMechanisms =
         let serverSaslList = T.split (== ' ') $ E.decodeUtf8 serverMechanisms
             clientMechanisms = coAuth connOpts
