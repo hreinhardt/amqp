@@ -231,24 +231,23 @@ openConnection'' connOpts = withSocketsDo $ do
     let conn = Connection handle cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cClosedHandlers lastChanID
 
     --spawn the connectionReceiver
-    void $ forkIO $ CE.finally (connectionReceiver conn)
-            (do
+    void $ forkIO $ CE.finally (connectionReceiver conn) $ do
                 -- try closing socket
                 CE.catch (hClose handle) (\(_ :: CE.SomeException) -> return ())
 
                 -- mark as closed
-                modifyMVar_ cClosed $ return . Just . maybe "closed" id
+                modifyMVar_ cClosed $ return . Just . maybe "unknown reason" id
 
                 --kill all channel-threads
-                void $ withMVar cChannels $ mapM_ (\c -> killThread $ snd c) . IM.elems
-                void $ withMVar cChannels $ const $ return $ IM.empty
+                modifyMVar_ cChannels $ \x -> do
+                    mapM_ (killThread . snd) $ IM.elems x
+                    return IM.empty
 
                 -- mark connection as closed, so all pending calls to 'closeConnection' can now return
                 void $ tryPutMVar ccl ()
 
                 -- notify connection-close-handlers
                 withMVar cClosedHandlers sequence
-                )
     return conn
   where
     connect ((host, port) : rest) = do
