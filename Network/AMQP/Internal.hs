@@ -411,9 +411,7 @@ channelReceiver chan = do
                     let msg = msgFromContentHeaderProperties properties body
                     let env = Envelope {envDeliveryTag = deliveryTag, envRedelivered = redelivered,
                                     envExchangeName = exchange, envRoutingKey = routingKey, envChannel = chan}
-
-                    CE.catch (subscriber (msg, env))
-                        (\(e::CE.SomeException) -> putStrLn $ "AMQP callback threw exception: " ++ show e)
+                    subscriber (msg, env)
                 Nothing ->
                     -- got a message, but have no registered subscriber; so drop it
                     return ()
@@ -431,9 +429,7 @@ channelReceiver chan = do
     handleAsync (ContentMethod basicReturn@(Basic_return _ _ _ _) props body) = do
         let msg      = msgFromContentHeaderProperties props body
             pubError = basicReturnToPublishError basicReturn
-        withMVar (returnListeners chan) $ \listeners ->
-            forM_ listeners $ \l -> CE.catch (l (msg, pubError)) $ \(ex :: CE.SomeException) ->
-                putStrLn ("handleAsync: return listener on channel [" ++ show (channelID chan) ++ "] handling error [" ++ show pubError ++ "] threw exception: " ++ show ex)
+        withMVar (returnListeners chan) $ mapM_ ($ (msg, pubError))
     handleAsync m = error ("handleAsync: Unknown method: " ++ show m)
 
     basicReturnToPublishError (Basic_return code (ShortString errText) (ShortString exchange) (ShortString routingKey)) =
