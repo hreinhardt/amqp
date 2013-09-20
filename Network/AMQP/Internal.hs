@@ -284,6 +284,7 @@ openConnection'' connOpts = withSocketsDo $ do
                 handleSecureUntilTune handle sasl
 
             tune@(Frame 0 (MethodPayload (Connection_tune _ _ _))) -> return tune
+            x -> error $ "handleSecureUntilTune fail. received message: "++show x
 
     open = (Frame 0 (MethodPayload (Connection_open
         (ShortString $ coVHost connOpts)
@@ -447,6 +448,7 @@ channelReceiver chan = do
                 num -> error $ "unexpected return error code: " ++ (show num)
             pubError = PublishError replyError (Just exchange) routingKey
         in pubError
+    basicReturnToPublishError x = error $ "basicReturnToPublishError fail: "++show x
 
 -- | registers a callback function that is called whenever a message is returned from the broker ('basic.return').
 addReturnListener :: Channel -> ((Message, PublishError) -> IO ()) -> IO ()
