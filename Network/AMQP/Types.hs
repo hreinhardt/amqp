@@ -1,4 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
+-- |
+--
+-- This module contains data-types specified in the AMQP spec
 module Network.AMQP.Types (
     Octet,
     Bit,
