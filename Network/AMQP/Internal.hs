@@ -95,8 +95,7 @@ readAssembly chan = do
                     --several frames containing the content will follow, so read them
                     (props, msg) <- collectContent chan
                     return $ ContentMethod p props msg
-                else do
-                    return $ SimpleMethod p
+                else return $ SimpleMethod p
         x -> error $ "didn't expect frame: " ++ show x
 
 -- | reads a contentheader and contentbodies and assembles them
@@ -518,8 +517,7 @@ writeFrames chan payloads =
                         ( \(_ :: CE.IOException) -> do
                             CE.throwIO $ userError "connection not open"
                         )
-                else do
-                    CE.throwIO $ userError "channel not open"
+                else CE.throwIO $ userError "channel not open"
 
 writeAssembly' :: Channel -> Assembly -> IO ()
 writeAssembly' chan (ContentMethod m properties msg) = do
