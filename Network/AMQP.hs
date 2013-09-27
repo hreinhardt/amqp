@@ -137,6 +137,7 @@ import qualified Data.Text as T
 import Network.AMQP.Types
 import Network.AMQP.Generated
 import Network.AMQP.Internal
+import Network.AMQP.Helpers
 
 ----- EXCHANGE -----
 
@@ -537,7 +538,7 @@ plain loginName loginPassword = SASLMechanism "PLAIN" initialResponse Nothing
 amqplain :: Text -> Text -> SASLMechanism
 amqplain loginName loginPassword = SASLMechanism "AMQPLAIN" initialResponse Nothing
   where
-    initialResponse = BL.toStrict $ BL.drop 4 $ runPut $ put $ FieldTable $ M.fromList [("LOGIN",FVString loginName), ("PASSWORD", FVString loginPassword)]
+    initialResponse = toStrict $ BL.drop 4 $ runPut $ put $ FieldTable $ M.fromList [("LOGIN",FVString loginName), ("PASSWORD", FVString loginPassword)]
 
 -- | The @RABBIT-CR-DEMO@ SASL mechanism needs to be explicitly enabled on the RabbitMQ server and should only be used for demonstration purposes of the challenge-response cycle.
 -- See <http://www.rabbitmq.com/authentication.html>.
