@@ -40,7 +40,7 @@ deliveryModeToInt Persistent = 2
 intToDeliveryMode :: Octet -> DeliveryMode
 intToDeliveryMode 1 = NonPersistent
 intToDeliveryMode 2 = Persistent
-intToDeliveryMode n = error ("Unknown delivery mode int: " ++ show n)
+intToDeliveryMode n = error ("intToDeliveryMode: Unknown delivery mode int: " ++ show n)
 
 -- | An AMQP message
 data Message = Message {
@@ -76,6 +76,7 @@ data PublishError = PublishError
 data ReturnReplyCode = Unroutable Text
                      | NoConsumers Text
                      | NotFound Text
+                     | Unknown ShortInt Text
     deriving (Eq, Read, Show)
 
 ------------- ASSEMBLY -------------------------
@@ -95,9 +96,8 @@ readAssembly chan = do
                     --several frames containing the content will follow, so read them
                     (props, msg) <- collectContent chan
                     return $ ContentMethod p props msg
-                else do
-                    return $ SimpleMethod p
-        x -> error $ "didn't expect frame: " ++ show x
+                else return $ SimpleMethod p
+        x -> error ("readAssembly: Unexpected frame: " ++ show x)
 
 -- | reads a contentheader and contentbodies and assembles them
 collectContent :: Chan FramePayload -> IO (ContentHeaderProperties, BL.ByteString)
@@ -131,7 +131,8 @@ data Connection = Connection {
                     connClosed :: MVar (Maybe String),
                     connClosedLock :: MVar (), -- used by closeConnection to block until connection-close handshake is complete
                     connWriteLock :: MVar (), -- to ensure atomic writes to the socket
-                    connClosedHandlers :: MVar [IO ()],
+                    connException :: MVar (Maybe CE.SomeException),
+                    connClosedHandlers :: MVar [Maybe CE.SomeException -> IO ()],
                     lastChannelID :: MVar Int --for auto-incrementing the channelIDs
                 }
 
@@ -163,8 +164,9 @@ connectionReceiver conn = do
         Frame chanID payload <- readFrame (connHandle conn)
         forwardToChannel chanID payload
         )
-        (\(e :: CE.IOException) -> do
+        (\(e :: CE.SomeException) -> do
             modifyMVar_ (connClosed conn) $ const $ return $ Just $ show e
+            modifyMVar_ (connException conn) $ const $ return $ Just e
             killThread =<< myThreadId
             )
     connectionReceiver conn
@@ -176,13 +178,13 @@ connectionReceiver conn = do
         writeFrame (connHandle conn) $ Frame 0 $ MethodPayload Connection_close_ok
         modifyMVar_ (connClosed conn) $ const $ return $ Just $ T.unpack errorMsg
         killThread =<< myThreadId
-    forwardToChannel 0 payload = putStrLn $ "Got unexpected msg on channel zero: " ++ show payload
+    forwardToChannel 0 payload = error ("forwardToChannel: Unexpected msg on channel zero: " ++ show payload)
     forwardToChannel chanID payload = do
         --got asynchronous msg => forward to registered channel
         withMVar (connChannels conn) $ \cs -> do
             case IM.lookup (fromIntegral chanID) cs of
                 Just c -> writeChan (inQueue $ fst c) payload
-                Nothing -> putStrLn $ "ERROR: channel not open " ++ show chanID
+                Nothing -> error ("forwardToChannel: Channel not open " ++ show chanID)
 
 -- | Opens a connection to a broker specified by the given 'ConnectionOpts' parameter.
 openConnection'' :: ConnectionOpts -> IO Connection
@@ -227,8 +229,9 @@ openConnection'' connOpts = withSocketsDo $ do
     cClosed <- newMVar Nothing
     writeLock <- newMVar ()
     ccl <- newEmptyMVar
+    cException <- newMVar Nothing
     cClosedHandlers <- newMVar []
-    let conn = Connection handle cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cClosedHandlers lastChanID
+    let conn = Connection handle cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cException cClosedHandlers lastChanID
 
     --spawn the connectionReceiver
     void $ forkIO $ CE.finally (connectionReceiver conn) $ do
@@ -246,26 +249,21 @@ openConnection'' connOpts = withSocketsDo $ do
                 -- mark connection as closed, so all pending calls to 'closeConnection' can now return
                 void $ tryPutMVar ccl ()
 
-                -- notify connection-close-handlers
-                withMVar cClosedHandlers sequence
+                -- notify connection-closed-handlers
+                withMVar cException $ \exc ->
+                  withMVar cClosedHandlers (mapM_ ($ exc))
     return conn
   where
-    connect ((host, port) : rest) = do
-        result <- CE.try (connectTo host $ PortNumber port)
-        either
-            (\(ex :: CE.SomeException) -> do
-                putStrLn $ "Error connecting to "++show (host, port)++": "++show ex
-                connect rest)
-            (return)
-            result
+    connect ((host, port) : rest) = connectTo host (PortNumber port) `CE.catch` \(_ :: CE.SomeException) -> connect rest
     connect [] = CE.throwIO $ ConnectionClosedException $ "Could not connect to any of the provided brokers: " ++ show (coServers connOpts)
+
     selectSASLMechanism handle serverMechanisms =
         let serverSaslList = T.split (== ' ') $ E.decodeUtf8 serverMechanisms
             clientMechanisms = coAuth connOpts
             clientSaslList = map saslName clientMechanisms
             maybeSasl = F.find (\(SASLMechanism name _ _) -> elem name serverSaslList) clientMechanisms
-        in abortIfNothing maybeSasl handle
-            ("None of the provided SASL mechanisms "++show clientSaslList++" is supported by the server "++show serverSaslList++".")
+        in abortIfNothing maybeSasl handle $
+             "None of the provided SASL mechanisms " ++ show clientSaslList ++ " is supported by the server " ++ show serverSaslList ++ "."
 
     start_ok sasl = (Frame 0 (MethodPayload (Connection_start_ok (FieldTable M.empty)
         (ShortString $ saslName sasl)
@@ -277,13 +275,13 @@ openConnection'' connOpts = withSocketsDo $ do
         case tuneOrSecure of
             Frame 0 (MethodPayload (Connection_secure (LongString challenge))) -> do
                 processChallenge <- abortIfNothing (saslChallengeFunc sasl)
-                    handle $ "The server provided a challenge, but the selected SASL mechanism "++show (saslName sasl)++" is not equipped with a challenge processing function."
+                    handle $ "The server provided a challenge, but the selected SASL mechanism " ++ show (saslName sasl) ++ " is not equipped with a challenge processing function."
                 challengeResponse <- processChallenge challenge
                 writeFrame handle (Frame 0 (MethodPayload (Connection_secure_ok (LongString challengeResponse))))
                 handleSecureUntilTune handle sasl
 
             tune@(Frame 0 (MethodPayload (Connection_tune _ _ _))) -> return tune
-            x -> error $ "handleSecureUntilTune fail. received message: "++show x
+            x -> error ("handleSecureUntilTune: Unexpected message: " ++ show x)
 
     open = (Frame 0 (MethodPayload (Connection_open
         (ShortString $ coVHost connOpts)
@@ -321,16 +319,16 @@ closeConnection c = do
     readMVar $ connClosedLock c
     return ()
 
--- | @addConnectionClosedHandler conn ifClosed handler@ adds a @handler@ that will be called after the connection is closed (either by calling @closeConnection@ or by an exception). If the @ifClosed@ parameter is True and the connection is already closed, the handler will be called immediately. If @ifClosed == False@ and the connection is already closed, the handler will never be called
-addConnectionClosedHandler :: Connection -> Bool -> IO () -> IO ()
+-- | @addConnectionClosedHandler conn ifClosed handler@ adds a @handler@ that will be called after the connection is closed (either by calling @closeConnection@ or by an exception). If the @ifClosed@ parameter is True and the connection is already closed, the handler will be called immediately without an exception. If @ifClosed == False@ and the connection is already closed, the handler will never be called
+addConnectionClosedHandler :: Connection -> Bool -> (Maybe CE.SomeException -> IO ()) -> IO ()
 addConnectionClosedHandler conn ifClosed handler = do
     withMVar (connClosed conn) $ \cc ->
         case cc of
             -- connection is already closed, so call the handler directly
-            Just _ | ifClosed == True -> handler
+            Just _ | ifClosed -> handler Nothing
 
             -- otherwise add it to the list
-            _ -> modifyMVar_ (connClosedHandlers conn) $ \old -> return $ handler:old
+            _ -> modifyMVar_ (connClosedHandlers conn) $ return . (handler:)
 
 readFrame :: Handle -> IO Frame
 readFrame handle = do
@@ -342,9 +340,9 @@ readFrame handle = do
     when (BL.null dat') $ CE.throwIO $ userError "connection not open"
     let ret = runGetOrFail get (BL.append dat dat')
     case ret of
-        Left (_, _, errMsg) -> error $ "readFrame fail: " ++ errMsg
+        Left (_, _, errMsg) -> error ("readFrame: " ++ errMsg)
         Right (_, consumedBytes, _) | consumedBytes /= fromIntegral (len+8) ->
-            error $ "readFrame: parser should read " ++ show (len+8) ++ " bytes; but read " ++ show consumedBytes
+            error ("readFrame: Parser should read " ++ show (len+8) ++ " bytes; but read " ++ show consumedBytes)
         Right (_, _, frame) -> return frame
 
 writeFrame :: Handle -> Frame -> IO ()
@@ -379,7 +377,7 @@ msgFromContentHeaderProperties (CHBasic content_type _ headers delivery_mode _ c
   where
     fromShortString (Just (ShortString s)) = Just s
     fromShortString _ = Nothing
-msgFromContentHeaderProperties c _ = error ("Unknown content header properties: " ++ show c)
+msgFromContentHeaderProperties c _ = error ("msgFromContentHeaderProperties: Unexpected content header properties: " ++ show c)
 
 -- | The thread that is run for every channel
 channelReceiver :: Channel -> IO ()
@@ -417,9 +415,7 @@ channelReceiver chan = do
                     let msg = msgFromContentHeaderProperties properties body
                     let env = Envelope {envDeliveryTag = deliveryTag, envRedelivered = redelivered,
                                     envExchangeName = exchange, envRoutingKey = routingKey, envChannel = chan}
-
-                    CE.catch (subscriber (msg, env))
-                        (\(e::CE.SomeException) -> putStrLn $ "AMQP callback threw exception: " ++ show e)
+                    subscriber (msg, env)
                 Nothing ->
                     -- got a message, but have no registered subscriber; so drop it
                     return ()
@@ -437,20 +433,18 @@ channelReceiver chan = do
     handleAsync (ContentMethod basicReturn@(Basic_return _ _ _ _) props body) = do
         let msg      = msgFromContentHeaderProperties props body
             pubError = basicReturnToPublishError basicReturn
-        withMVar (returnListeners chan) $ \listeners ->
-            forM_ listeners $ \l -> CE.catch (l (msg, pubError)) $ \(ex :: CE.SomeException) ->
-                putStrLn $ "return listener on channel ["++(show $ channelID chan)++"] handling error ["++show pubError++"] threw exception: "++show ex
-    handleAsync m = error ("Unknown method: " ++ show m)
+        withMVar (returnListeners chan) $ mapM_ ($ (msg, pubError))
+    handleAsync m = error ("handleAsync: Unknown method: " ++ show m)
 
     basicReturnToPublishError (Basic_return code (ShortString errText) (ShortString exchange) (ShortString routingKey)) =
         let replyError = case code of
                 312 -> Unroutable errText
                 313 -> NoConsumers errText
                 404 -> NotFound errText
-                num -> error $ "unexpected return error code: " ++ (show num)
+                num -> Unknown num errText
             pubError = PublishError replyError (Just exchange) routingKey
         in pubError
-    basicReturnToPublishError x = error $ "basicReturnToPublishError fail: "++show x
+    basicReturnToPublishError x = error ("basicReturnToPublishError: unexpected return" ++ show x)
 
 -- | registers a callback function that is called whenever a message is returned from the broker ('basic.return').
 addReturnListener :: Channel -> ((Message, PublishError) -> IO ()) -> IO ()
@@ -460,7 +454,7 @@ addReturnListener chan listener = do
 -- closes the channel internally; but doesn't tell the server
 closeChannel' :: Channel -> Text -> IO ()
 closeChannel' c reason = do
-    modifyMVar_ (connChannels $ connection c) $ \old -> return $ IM.delete (fromIntegral $ channelID c) old
+    modifyMVar_ (connChannels $ connection c) $ return . IM.delete (fromIntegral $ channelID c)
     -- mark channel as closed
     modifyMVar_ (chanClosed c) $ \x -> do
         if isNothing x
@@ -518,8 +512,7 @@ writeFrames chan payloads =
                         ( \(_ :: CE.IOException) -> do
                             CE.throwIO $ userError "connection not open"
                         )
-                else do
-                    CE.throwIO $ userError "channel not open"
+                else CE.throwIO $ userError "channel not open"
 
 writeAssembly' :: Channel -> Assembly -> IO ()
 writeAssembly' chan (ContentMethod m properties msg) = do

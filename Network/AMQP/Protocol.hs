@@ -70,7 +70,7 @@ getPayload 2 _ = do --content header frame
 getPayload 3 payloadSize = do --content body frame
     payload <- getLazyByteString $ fromIntegral payloadSize
     return (ContentBodyPayload payload)
-getPayload n _ = error ("Unknown frame payload: " ++ show n)
+getPayload x _ = error ("getPayload: Unexpected frame payload " ++ show x)
 
 putPayload :: FramePayload -> Put
 putPayload (MethodPayload payload) = put payload

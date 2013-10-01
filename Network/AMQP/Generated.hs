@@ -15,8 +15,7 @@ getContentHeaderProperties 50 = getPropBits 0 >>= \[] ->  return CHQueue
 getContentHeaderProperties 60 = getPropBits 14 >>= \[a,b,c,d,e,f,g,h,i,j,k,l,m,n] -> condGet a >>= \a' -> condGet b >>= \b' -> condGet c >>= \c' -> condGet d >>= \d' -> condGet e >>= \e' -> condGet f >>= \f' -> condGet g >>= \g' -> condGet h >>= \h' -> condGet i >>= \i' -> condGet j >>= \j' -> condGet k >>= \k' -> condGet l >>= \l' -> condGet m >>= \m' -> condGet n >>= \n' ->  return (CHBasic a' b' c' d' e' f' g' h' i' j' k' l' m' n' )
 getContentHeaderProperties 90 = getPropBits 0 >>= \[] ->  return CHTx
 getContentHeaderProperties 85 = getPropBits 0 >>= \[] ->  return CHConfirm
-
-getContentHeaderProperties n = error ("Unexpected content header properties: " ++ show n)
+getContentHeaderProperties x = error ("getContentHeaderProperties: Unexpected content header properties " ++ show x)
 putContentHeaderProperties :: ContentHeaderProperties -> Put
 putContentHeaderProperties CHConnection = putPropBits []
 putContentHeaderProperties CHChannel = putPropBits []
@@ -224,7 +223,7 @@ instance Binary MethodPayload where
 			(90,31) ->  return Tx_rollback_ok
 			(85,10) -> get >>= \a ->  return (Confirm_select a)
 			(85,11) ->  return Confirm_select_ok
-			x -> error ("Unexpected classID and methodID: " ++ show x)
+			x -> error ("get: Unexpected classID and methodID " ++ show x)
 data MethodPayload =
 
 	Connection_start
