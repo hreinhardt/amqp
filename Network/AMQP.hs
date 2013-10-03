@@ -119,7 +119,10 @@ module Network.AMQP (
     rabbitCRdemo,
 
     -- * Exceptions
-    AMQPException(..)
+    AMQPException(..),
+    
+    -- * URI parsing
+    fromURI
 ) where
 
 import Control.Concurrent
@@ -562,3 +565,27 @@ qos chan prefetchSize prefetchCount = do
         False
         ))
     return ()
+    
+-- | Parses amqp standard URI of the form @amqp://user:password@host:port/vhost@ and returns a @ConnectionOpts@ for use with @openConnection''@
+-- | Any of these fields may be empty and will be replaced with defaults from @amqp://guest:guest@localhost:5672/@
+fromURI :: String -> ConnectionOpts
+fromURI uri = defaultConnectionOpts {
+    coServers = [(host,fromIntegral nport)],
+    coVHost = (T.pack vhost),
+    coAuth = [plain (T.pack uid) (T.pack pw)]
+  }
+  where (host,nport,uid,pw,vhost) = fromURI' uri
+
+fromURI' :: String -> (String,Int,String,String,String)
+fromURI' uri = (host, nport, dropWhile (=='/') uid, pw, vhost)
+  where (pre :suf  :    _) = splitOn "@" (uri ++ "@" ) -- look mom, no regexp dependencies
+        (pro :uid' :pw':_) = splitOn ":" (pre ++ "::")
+        (hnp :thost:    _) = splitOn "/" (suf ++ "/" )
+        (hst':port :    _) = splitOn ":" (hnp ++ ":" )
+        vhost = if null thost     then "/"     else thost
+        dport = if pro == "amqps" then 5671    else 5672
+        nport = if null port      then dport   else read port
+        uid   = if null uid'      then "guest" else uid'
+        pw    = if null pw'       then "guest" else pw'
+        host  = if null hst'      then "localhost" else hst'
+
