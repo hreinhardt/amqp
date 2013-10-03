@@ -126,6 +126,7 @@ module Network.AMQP (
 ) where
 
 import Control.Concurrent
+import Data.List.Split (splitOn)
 import Data.Binary
 import Data.Binary.Put
 import Network
