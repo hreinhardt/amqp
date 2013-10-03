@@ -129,6 +129,7 @@ import Control.Concurrent
 import Data.Binary
 import Data.Binary.Put
 import Network
+import Network.URI (unEscapeString)
 import Data.Text (Text)
 
 import qualified Data.ByteString.Lazy as BL
@@ -577,7 +578,7 @@ fromURI uri = defaultConnectionOpts {
   where (host,nport,uid,pw,vhost) = fromURI' uri
 
 fromURI' :: String -> (String,Int,String,String,String)
-fromURI' uri = (host, nport, dropWhile (=='/') uid, pw, vhost)
+fromURI' uri = (unEscapeString host, nport, unEscapeString (dropWhile (=='/') uid), unEscapeString pw, unEscapeString vhost)
   where (pre :suf  :    _) = splitOn "@" (uri ++ "@" ) -- look mom, no regexp dependencies
         (pro :uid' :pw':_) = splitOn ":" (pre ++ "::")
         (hnp :thost:    _) = splitOn "/" (suf ++ "/" )
