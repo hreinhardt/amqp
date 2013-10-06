@@ -18,6 +18,7 @@ spec = do
 
     context "with custom vhost and valid credentials" $ do
       it "connects successfully" $ do
+        -- see ./bin/ci/before_build.sh
         conn <- openConnection "127.0.0.1" "haskell_amqp_testbed"
                                            "haskell_amqp"
                                            "haskell_amqp_password"
