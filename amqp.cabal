@@ -24,7 +24,7 @@ Library
   GHC-Options:        -Wall
 
 Executable amqp-builder
-  Build-Depends:      xml == 1.3.*
+  Build-Depends:      base >= 4 && < 5, xml == 1.3.*, containers >= 0.2
   Hs-Source-Dirs:     Tools
   Main-is:            Builder.hs
   GHC-Options:        -Wall
@@ -32,3 +32,16 @@ Executable amqp-builder
 source-repository head
   type:     git
   location: https://github.com/hreinhardt/amqp
+
+test-suite spec
+  type:
+      exitcode-stdio-1.0
+  ghc-options:
+      -Wall -Werror
+  hs-source-dirs:
+      ., test
+  main-is:
+      Runner.hs
+  build-depends:
+      base >= 4 && < 5, binary >= 0.7, containers>=0.2, bytestring>=0.9, network>=2.2.3.1, data-binary-ieee754>=0.4.2.1, text>=0.11.2, split>=0.2
+    , hspec      >= 1.3

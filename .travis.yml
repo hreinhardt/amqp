@@ -1,0 +1,7 @@
+language: haskell
+before_script: "./bin/ci/before_build.sh"
+services:
+  - rabbitmq
+branches:
+  only:
+    - master
