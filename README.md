@@ -6,6 +6,10 @@ Library for accessing RabbitMQ from Haskell. Please see the [Hackage docs](http:
 Changelog
 =========
 
+### Version 0.x.y
+
+* new function fromURI to parse AMQP URIs
+
 ### Version 0.6.0
 
 * new function addReturnListener which allows specifying a handler for returned messages
