@@ -508,7 +508,7 @@ flow chan active = do
 --
 --     * use the heartbeat delay suggested by the broker
 --
---     * no limit on the number of used channels
+--     * use the maximum number of usable channels suggested by the broker (rabbitmq imposes no limit)
 --
 defaultConnectionOpts :: ConnectionOpts
 defaultConnectionOpts = ConnectionOpts [("localhost", 5672)] "/" [plain "guest" "guest"] (Just 131072) Nothing Nothing

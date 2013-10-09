@@ -133,15 +133,14 @@ data Connection = Connection {
                     connClosedLock :: MVar (), -- used by closeConnection to block until connection-close handshake is complete
                     connWriteLock :: MVar (), -- to ensure atomic writes to the socket
                     connClosedHandlers :: MVar [IO ()],
-                    lastChannelID :: MVar Int, -- for auto-incrementing the channelIDs
                     connLastReceived :: MVar Int64, -- the timestamp from a monotonic clock when the last frame was received
-                    connLastSent :: MVar Int64 -- the timestamp from a monotonic clock when the last frame was written
+                    connLastSent :: MVar Int64, -- the timestamp from a monotonic clock when the last frame was written
+                    connChannelIds :: IdAllocator  -- for generating the channelIDs
                 }
 
 -- | Represents the parameters to connect to a broker or a cluster of brokers.
 -- See 'defaultConnectionOpts'.
 --
--- /NOTICE/: The field 'coMaxChannel' was only added for future use, as the respective functionality is not yet implemented.
 data ConnectionOpts = ConnectionOpts {
                             coServers :: ![(String, PortNumber)], -- ^ A list of host-port pairs. Useful in a clustered setup to connect to the first available host.
                             coVHost :: !Text, -- ^ The VHost to connect to.
@@ -187,7 +186,7 @@ connectionReceiver conn = do
 openConnection'' :: ConnectionOpts -> IO Connection
 openConnection'' connOpts = withSocketsDo $ do
     handle <- connect $ coServers connOpts
-    (maxFrameSize, heartbeatTimeout) <- CE.handle (\(_ :: CE.IOException) -> CE.throwIO $ ConnectionClosedException "Handshake failed. Please check the RabbitMQ logs for more information") $ do
+    (maxChannels, maxFrameSize, heartbeatTimeout) <- CE.handle (\(_ :: CE.IOException) -> CE.throwIO $ ConnectionClosedException "Handshake failed. Please check the RabbitMQ logs for more information") $ do
         BL.hPut handle $ BPut.runPut $ do
             BPut.putByteString $ BC.pack "AMQP"
             BPut.putWord8 1
@@ -203,15 +202,17 @@ openConnection'' connOpts = withSocketsDo $ do
         -- C: start_ok
         writeFrame handle $ start_ok selectedSASL
         -- S: secure or tune
-        Frame 0 (MethodPayload (Connection_tune _ frame_max sendHeartbeat)) <- handleSecureUntilTune handle selectedSASL
+        Frame 0 (MethodPayload (Connection_tune channel_max frame_max sendHeartbeat)) <- handleSecureUntilTune handle selectedSASL
         -- C: tune_ok
         let maxFrameSize = chooseMin frame_max $ coMaxFrameSize connOpts
             finalHeartbeatSec = fromMaybe sendHeartbeat (coHeartbeatDelay connOpts)
             heartbeatTimeout = mfilter (/=0) (Just finalHeartbeatSec)
+            finalMaxChannels = fromMaybe channel_max (coMaxChannel connOpts)
+            maxChannels = mfilter (/= 0) (Just finalMaxChannels)
 
         writeFrame handle (Frame 0 (MethodPayload
             --TODO: handle channel_max
-            (Connection_tune_ok 0 maxFrameSize finalHeartbeatSec)
+            (Connection_tune_ok finalMaxChannels maxFrameSize finalHeartbeatSec)
             ))
         -- C: open
         writeFrame handle open
@@ -220,18 +221,18 @@ openConnection'' connOpts = withSocketsDo $ do
         Frame 0 (MethodPayload (Connection_open_ok _)) <- readFrame handle
 
         -- Connection established!
-        return (maxFrameSize, heartbeatTimeout)
+        return (maxChannels, maxFrameSize, heartbeatTimeout)
 
     --build Connection object
     cChannels <- newMVar IM.empty
-    lastChanID <- newMVar 0
     cClosed <- newMVar Nothing
     writeLock <- newMVar ()
     ccl <- newEmptyMVar
     cClosedHandlers <- newMVar []
     cLastReceived <- getTimestamp >>= newMVar
     cLastSent <- getTimestamp >>= newMVar
-    let conn = Connection handle cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cClosedHandlers lastChanID cLastReceived cLastSent
+    idAllocator <- newIdAllocator (fromMaybe (maxBound :: Word16) maxChannels)
+    let conn = Connection handle cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cClosedHandlers cLastReceived cLastSent idAllocator
 
     --spawn the connectionReceiver
     connThread <- forkIO $ CE.finally (connectionReceiver conn) $ do
@@ -504,6 +505,7 @@ addReturnListener chan listener = do
 closeChannel' :: Channel -> Text -> IO ()
 closeChannel' c reason = do
     modifyMVar_ (connChannels $ connection c) $ \old -> return $ IM.delete (fromIntegral $ channelID c) old
+    releaseId (connChannelIds $ connection c) (channelID c)
     -- mark channel as closed
     modifyMVar_ (chanClosed c) $ \x -> do
         if isNothing x
@@ -534,7 +536,10 @@ openChannel c = do
     listeners <- newMVar []
 
     --get a new unused channelID
-    newChannelID <- modifyMVar (lastChannelID c) $ \x -> return (x+1, x+1)
+    maybeNewChannelID <- nextId (connChannelIds c)
+    newChannelID <- case maybeNewChannelID of
+            Just i  -> return i
+            Nothing -> CE.throwIO $ userError "channel limit reached"
 
     let newChannel = Channel c newInQueue outRes (fromIntegral newChannelID) lastConsTag ca closed conss listeners
 
@@ -542,7 +547,7 @@ openChannel c = do
         (closeChannel' newChannel "closed")
 
     --add new channel to connection's channel map
-    modifyMVar_ (connChannels c) (return . IM.insert newChannelID (newChannel, thrID))
+    modifyMVar_ (connChannels c) (return . IM.insert (fromIntegral newChannelID) (newChannel, thrID))
 
     (SimpleMethod (Channel_open_ok _)) <- request newChannel (SimpleMethod (Channel_open (ShortString "")))
     return newChannel

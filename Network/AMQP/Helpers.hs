@@ -5,9 +5,12 @@ import Control.Concurrent
 import Control.Monad
 import Data.Int (Int64)
 import System.Clock
+import Data.List (foldl')
+import Data.Word
 
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BL
+import qualified Data.BitSet.Dynamic as DBS
 
 toStrict :: BL.ByteString -> BS.ByteString
 toStrict = BS.concat . BL.toChunks
@@ -44,11 +47,38 @@ chooseMin a Nothing  = a
 getTimestamp :: IO Int64
 getTimestamp = fmap µs $ getTime Monotonic
   where
-  	seconds spec = (fromIntegral . sec) spec * 1000 * 1000
-  	micros spec = (fromIntegral . nsec) spec `div` 1000
-  	µs spec = (seconds spec) + (micros spec)
+    seconds spec = (fromIntegral . sec) spec * 1000 * 1000
+    micros spec = (fromIntegral . nsec) spec `div` 1000
+    µs spec = (seconds spec) + (micros spec)
 
 scheduleAtFixedRate :: Int -> IO () -> IO ThreadId
 scheduleAtFixedRate interval_µs action = forkIO $ forever $ do
     action
     threadDelay interval_µs
+
+type ChannelIDs = DBS.BitSet Word16
+
+data IdAllocator = IdAllocator {
+    high :: Word16,
+    bits :: MVar ChannelIDs
+}
+
+newIdAllocator :: Word16 -> IO IdAllocator
+newIdAllocator hi = do
+    set <- newMVar full
+    return $ IdAllocator hi set
+  where
+    full = foldl' (flip DBS.insert) DBS.empty [1 .. hi]
+
+nextId :: IdAllocator -> IO (Maybe Word16)
+nextId alloc = modifyMVar (bits alloc) $ \set ->
+    if not (DBS.null set)
+        then let i = head $ DBS.toList set
+             in return (DBS.delete i set, Just i)
+        else return (set, Nothing)
+
+releaseId :: IdAllocator -> Word16 -> IO ()
+releaseId alloc i = if i <= high alloc && i > 0
+    then modifyMVar_ (bits alloc) (return . DBS.insert i)
+    else return ()
+

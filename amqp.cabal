@@ -18,7 +18,7 @@ Extra-source-files:  examples/ExampleConsumer.hs,
                      examples/ExampleProducer.hs
 
 Library
-  Build-Depends:      base >= 4 && < 5, binary >= 0.7, containers>=0.2, bytestring>=0.9, network>=2.2.3.1, data-binary-ieee754>=0.4.2.1, text>=0.11.2, split>=0.2, clock == 0.3
+  Build-Depends:      base >= 4 && < 5, binary >= 0.7, containers>=0.2, bytestring>=0.9, network>=2.2.3.1, data-binary-ieee754>=0.4.2.1, text>=0.11.2, split>=0.2, clock == 0.3, bitset>=1.4.7
   Exposed-modules:    Network.AMQP, Network.AMQP.Types
   Other-modules:      Network.AMQP.Generated, Network.AMQP.Helpers, Network.AMQP.Protocol, Network.AMQP.Internal
   GHC-Options:        -Wall
