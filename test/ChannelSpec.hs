@@ -21,3 +21,8 @@ spec = do
         -- TODO: assert on channel id
 
         closeConnection conn
+
+  describe "closeChannel" $ do
+    context "with an open channel" $ do
+      it "closes the channel" $ do
+        pending
