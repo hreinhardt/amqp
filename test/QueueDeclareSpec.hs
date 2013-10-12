@@ -4,6 +4,7 @@ module QueueDeclareSpec (main, spec) where
 
 import Test.Hspec
 import Network.AMQP
+import Data.Text (isPrefixOf)
 
 
 main :: IO ()
@@ -42,5 +43,7 @@ spec = do
                                                 queueAutoDelete = False})
 
         (_, _, _) <- declareQueue ch (newQueue {queueName = q, queuePassive = True})
+
+        (isPrefixOf "amq.gen" q) `shouldBe` True
 
         closeConnection conn
