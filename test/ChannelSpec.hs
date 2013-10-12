@@ -4,6 +4,7 @@ module ChannelSpec (main, spec) where
 
 import Test.Hspec
 import Network.AMQP
+import Network.AMQP.Internal (channelID)
 
 main :: IO ()
 main = hspec spec
@@ -14,11 +15,13 @@ spec = do
     context "with automatically allocated channel id" $ do
       it "opens a new channel with unique id" $ do
         conn <- openConnection "127.0.0.1" "/" "guest" "guest"
-        ch   <- openChannel conn
+        ch1  <- openChannel conn
+        ch2  <- openChannel conn
+        ch3  <- openChannel conn
 
-        -- use the channel to avoid warnings
-        qos ch 0 64
-        -- TODO: assert on channel id
+        (channelID ch1) `shouldBe` 1
+        (channelID ch2) `shouldBe` 2
+        (channelID ch3) `shouldBe` 3
 
         closeConnection conn
 
