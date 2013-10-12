@@ -42,4 +42,3 @@ spec = do
         qos ch 0 5
 
         closeConnection conn
-        
