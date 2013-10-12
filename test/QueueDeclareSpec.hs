@@ -42,8 +42,11 @@ spec = do
                                                 queueExclusive  = True,
                                                 queueAutoDelete = False})
 
-        (_, _, _) <- declareQueue ch (newQueue {queueName = q, queuePassive = True})
+        (_, cn, mn) <- declareQueue ch (newQueue {queueName = q, queuePassive = True})
 
         (isPrefixOf "amq.gen" q) `shouldBe` True
-
+        -- consumer count, undelivered message count
+        cn `shouldBe` 0
+        mn `shouldBe` 0
+  
         closeConnection conn
