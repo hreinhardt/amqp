@@ -29,3 +29,17 @@ spec = do
     context "with an open channel" $ do
       it "closes the channel" $ do
         pending
+
+  describe "qos" $ do
+    context "with prefetchCount = 5" $ do
+      it "sets prefetch count" $ do
+        -- we won't demonstrate how basic.qos works in concert
+        -- with acks here, it's more of a basic.consume functionality
+        -- aspect
+        conn <- openConnection "127.0.0.1" "/" "guest" "guest"
+        ch   <- openChannel conn
+
+        qos ch 0 5
+
+        closeConnection conn
+        
