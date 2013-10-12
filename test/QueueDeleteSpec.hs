@@ -4,7 +4,6 @@ module QueueDeleteSpec (main, spec) where
 
 import Test.Hspec
 import Network.AMQP
--- import Network.AMQP.Internal
 
 main :: IO ()
 main = hspec spec
