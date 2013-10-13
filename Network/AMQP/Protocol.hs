@@ -50,12 +50,14 @@ data FramePayload =
                MethodPayload MethodPayload
              | ContentHeaderPayload ShortInt ShortInt LongLongInt ContentHeaderProperties --classID, weight, bodySize, propertyFields
              | ContentBodyPayload BL.ByteString
+             | HeartbeatPayload
     deriving Show
 
 frameType :: FramePayload -> Word8
 frameType (MethodPayload _) = 1
 frameType (ContentHeaderPayload _ _ _ _) = 2
 frameType (ContentBodyPayload _) = 3
+frameType HeartbeatPayload = 8
 
 getPayload :: Word8 -> PayloadSize -> Get FramePayload
 getPayload 1 _ = do --METHOD FRAME
@@ -70,6 +72,10 @@ getPayload 2 _ = do --content header frame
 getPayload 3 payloadSize = do --content body frame
     payload <- getLazyByteString $ fromIntegral payloadSize
     return (ContentBodyPayload payload)
+getPayload 8 payloadSize = do
+    -- ignoring the actual payload, but still need to read the bytes from the network buffer
+    _ <- getLazyByteString $ fromIntegral payloadSize
+    return HeartbeatPayload
 getPayload n _ = error ("Unknown frame payload: " ++ show n)
 
 putPayload :: FramePayload -> Put
@@ -80,3 +86,4 @@ putPayload (ContentHeaderPayload classID weight bodySize p) = do
     put bodySize
     putContentHeaderProperties p
 putPayload (ContentBodyPayload payload) = putLazyByteString payload
+putPayload HeartbeatPayload = putLazyByteString BL.empty

@@ -120,7 +120,7 @@ module Network.AMQP (
 
     -- * Exceptions
     AMQPException(..),
-    
+
     -- * URI parsing
     fromURI
 ) where
@@ -506,7 +506,7 @@ flow chan active = do
 --
 --     * max frame size: @131072@
 --
---     * no heartbeat expected from the server
+--     * use the heartbeat delay suggested by the broker
 --
 --     * no limit on the number of used channels
 --
@@ -567,7 +567,7 @@ qos chan prefetchSize prefetchCount = do
         False
         ))
     return ()
-    
+
 -- | Parses amqp standard URI of the form @amqp://user:password@host:port/vhost@ and returns a @ConnectionOpts@ for use with @openConnection''@
 -- | Any of these fields may be empty and will be replaced with defaults from @amqp://guest:guest@localhost:5672/@
 fromURI :: String -> ConnectionOpts

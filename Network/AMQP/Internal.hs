@@ -132,19 +132,21 @@ data Connection = Connection {
                     connClosedLock :: MVar (), -- used by closeConnection to block until connection-close handshake is complete
                     connWriteLock :: MVar (), -- to ensure atomic writes to the socket
                     connClosedHandlers :: MVar [IO ()],
-                    lastChannelID :: MVar Int --for auto-incrementing the channelIDs
+                    lastChannelID :: MVar Int, -- for auto-incrementing the channelIDs
+                    connLastReceived :: MVar Int, -- the timestamp from a monotonic clock when the last frame was received
+                    connLastSent :: MVar Int -- the timestamp from a monotonic clock when the last frame was written
                 }
 
 -- | Represents the parameters to connect to a broker or a cluster of brokers.
 -- See 'defaultConnectionOpts'.
 --
--- /NOTICE/: The fields 'coHeartbeatDelay' and 'coMaxChannel' were only added for future use, as the respective functionality is not yet implemented.
+-- /NOTICE/: The field 'coMaxChannel' was only added for future use, as the respective functionality is not yet implemented.
 data ConnectionOpts = ConnectionOpts {
                             coServers :: ![(String, PortNumber)], -- ^ A list of host-port pairs. Useful in a clustered setup to connect to the first available host.
                             coVHost :: !Text, -- ^ The VHost to connect to.
                             coAuth :: ![SASLMechanism], -- ^ The 'SASLMechanism's to use for authenticating with the broker.
                             coMaxFrameSize :: !(Maybe Word32), -- ^ The maximum frame size to be used. If not specified, no limit is assumed.
-                            coHeartbeatDelay :: !(Maybe Word16), -- ^ The delay in seconds, after which the client expects a heartbeat frame from the broker. If not specified, no heartbeat is expected.
+                            coHeartbeatDelay :: !(Maybe Word16), -- ^ The delay in seconds, after which the client expects a heartbeat frame from the broker. If 'Nothing', the value suggested by the broker is used. Use @Just 0@ to disable the heartbeat mechnism.
                             coMaxChannel :: !(Maybe Word16) -- ^ The maximum number of channels the client will use.
                         }
 
@@ -161,21 +163,17 @@ connectionReceiver :: Connection -> IO ()
 connectionReceiver conn = do
     CE.catch (do
         Frame chanID payload <- readFrame (connHandle conn)
+        updateLastReceived conn
         forwardToChannel chanID payload
         )
-        (\(e :: CE.IOException) -> do
-            modifyMVar_ (connClosed conn) $ const $ return $ Just $ show e
-            killThread =<< myThreadId
-            )
+        (\(e :: CE.IOException) -> myThreadId >>= killConnection conn (show e))
     connectionReceiver conn
   where
-    forwardToChannel 0 (MethodPayload Connection_close_ok) = do
-        modifyMVar_ (connClosed conn) $ const $ return $ Just "closed by user"
-        killThread =<< myThreadId
+    forwardToChannel 0 (MethodPayload Connection_close_ok) =  myThreadId >>= killConnection conn "closed by user"
     forwardToChannel 0 (MethodPayload (Connection_close _ (ShortString errorMsg) _ _)) = do
         writeFrame (connHandle conn) $ Frame 0 $ MethodPayload Connection_close_ok
-        modifyMVar_ (connClosed conn) $ const $ return $ Just $ T.unpack errorMsg
-        killThread =<< myThreadId
+        myThreadId >>= killConnection conn (T.unpack errorMsg)
+    forwardToChannel 0 HeartbeatPayload = return ()
     forwardToChannel 0 payload = putStrLn $ "Got unexpected msg on channel zero: " ++ show payload
     forwardToChannel chanID payload = do
         --got asynchronous msg => forward to registered channel
@@ -188,7 +186,7 @@ connectionReceiver conn = do
 openConnection'' :: ConnectionOpts -> IO Connection
 openConnection'' connOpts = withSocketsDo $ do
     handle <- connect $ coServers connOpts
-    maxFrameSize <- CE.handle (\(_ :: CE.IOException) -> CE.throwIO $ ConnectionClosedException "Handshake failed. Please check the RabbitMQ logs for more information") $ do
+    (maxFrameSize, heartbeatTimeout) <- CE.handle (\(_ :: CE.IOException) -> CE.throwIO $ ConnectionClosedException "Handshake failed. Please check the RabbitMQ logs for more information") $ do
         BL.hPut handle $ BPut.runPut $ do
             BPut.putByteString $ BC.pack "AMQP"
             BPut.putWord8 1
@@ -204,13 +202,15 @@ openConnection'' connOpts = withSocketsDo $ do
         -- C: start_ok
         writeFrame handle $ start_ok selectedSASL
         -- S: secure or tune
-        Frame 0 (MethodPayload (Connection_tune _ frame_max _)) <- handleSecureUntilTune handle selectedSASL
+        Frame 0 (MethodPayload (Connection_tune _ frame_max sendHeartbeat)) <- handleSecureUntilTune handle selectedSASL
         -- C: tune_ok
         let maxFrameSize = chooseMin frame_max $ coMaxFrameSize connOpts
+            finalHeartbeatSec = fromMaybe sendHeartbeat (coHeartbeatDelay connOpts)
+            heartbeatTimeout = mfilter (/=0) (Just finalHeartbeatSec)
 
         writeFrame handle (Frame 0 (MethodPayload
             --TODO: handle channel_max
-            (Connection_tune_ok 0 maxFrameSize 0)
+            (Connection_tune_ok 0 maxFrameSize finalHeartbeatSec)
             ))
         -- C: open
         writeFrame handle open
@@ -219,7 +219,7 @@ openConnection'' connOpts = withSocketsDo $ do
         Frame 0 (MethodPayload (Connection_open_ok _)) <- readFrame handle
 
         -- Connection established!
-        return maxFrameSize
+        return (maxFrameSize, heartbeatTimeout)
 
     --build Connection object
     cChannels <- newMVar IM.empty
@@ -228,10 +228,12 @@ openConnection'' connOpts = withSocketsDo $ do
     writeLock <- newMVar ()
     ccl <- newEmptyMVar
     cClosedHandlers <- newMVar []
-    let conn = Connection handle cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cClosedHandlers lastChanID
+    cLastReceived <- getTimestamp >>= newMVar
+    cLastSent <- getTimestamp >>= newMVar
+    let conn = Connection handle cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cClosedHandlers lastChanID cLastReceived cLastSent
 
     --spawn the connectionReceiver
-    void $ forkIO $ CE.finally (connectionReceiver conn) $ do
+    connThread <- forkIO $ CE.finally (connectionReceiver conn) $ do
                 -- try closing socket
                 CE.catch (hClose handle) (\(_ :: CE.SomeException) -> return ())
 
@@ -248,6 +250,13 @@ openConnection'' connOpts = withSocketsDo $ do
 
                 -- notify connection-close-handlers
                 withMVar cClosedHandlers sequence
+
+    case heartbeatTimeout of
+        Nothing      -> return ()
+        Just timeout ->  do
+            heartbeatThread <- watchHeartbeats conn (fromIntegral timeout) connThread
+            addConnectionClosedHandler conn True (killThread heartbeatThread)
+
     return conn
   where
     connect ((host, port) : rest) = do
@@ -297,6 +306,39 @@ openConnection'' connOpts = withSocketsDo $ do
     abortIfNothing m handle msg = case m of
         Nothing -> abortHandshake handle msg
         Just a  -> return a
+
+
+watchHeartbeats :: Connection -> Int -> ThreadId -> IO ThreadId
+watchHeartbeats conn timeout connThread = scheduleAtFixedRate rate $ do
+    checkSendTimeout
+    checkReceiveTimeout
+  where
+    rate = timeout * 1000 * 250 -- timeout / 4 in µs
+    receiveTimeout = rate * 4 * 2 -- 2*timeout in µs
+    sendTimeout = rate * 2 -- timeout/2 in µs
+
+    checkReceiveTimeout = check (connLastReceived conn) receiveTimeout
+        (killConnection conn "killed connection after missing 2 consecutive heartbeats" connThread)
+
+    checkSendTimeout = check (connLastSent conn) sendTimeout
+        (writeFrame (connHandle conn) (Frame 0 HeartbeatPayload))
+
+    check var timeout_µs action = withMVar var $ \lastFrameTime -> do
+        time <- getTimestamp
+        when (time >= lastFrameTime + timeout_µs) $ do
+            action
+
+updateLastSent :: Connection -> IO ()
+updateLastSent conn = modifyMVar_ (connLastSent conn) (const getTimestamp)
+
+updateLastReceived :: Connection -> IO ()
+updateLastReceived conn = modifyMVar_ (connLastReceived conn) (const getTimestamp)
+
+-- | kill the connection thread abruptly
+killConnection :: Connection -> String -> ThreadId -> IO ()
+killConnection conn msg connThread = do
+    modifyMVar_ (connClosed conn) $ const $ return $ Just msg
+    killThread connThread
 
 -- | closes a connection
 --
@@ -513,8 +555,10 @@ writeFrames chan payloads =
                 then
                     CE.catch
                         -- ensure at most one thread is writing to the socket at any time
-                        (withMVar (connWriteLock conn) $ \_ ->
-                            mapM_ (\payload -> writeFrame (connHandle conn) (Frame (channelID chan) payload)) payloads)
+                        (do
+                            withMVar (connWriteLock conn) $ \_ ->
+                                mapM_ (\payload -> writeFrame (connHandle conn) (Frame (channelID chan) payload)) payloads
+                            updateLastSent conn)
                         ( \(_ :: CE.IOException) -> do
                             CE.throwIO $ userError "connection not open"
                         )
