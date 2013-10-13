@@ -6,6 +6,7 @@ import Control.Monad
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put as BPut
+import Data.Int (Int64)
 import Data.Maybe
 import Data.Text (Text)
 import Data.Typeable
@@ -133,8 +134,8 @@ data Connection = Connection {
                     connWriteLock :: MVar (), -- to ensure atomic writes to the socket
                     connClosedHandlers :: MVar [IO ()],
                     lastChannelID :: MVar Int, -- for auto-incrementing the channelIDs
-                    connLastReceived :: MVar Int, -- the timestamp from a monotonic clock when the last frame was received
-                    connLastSent :: MVar Int -- the timestamp from a monotonic clock when the last frame was written
+                    connLastReceived :: MVar Int64, -- the timestamp from a monotonic clock when the last frame was received
+                    connLastSent :: MVar Int64 -- the timestamp from a monotonic clock when the last frame was written
                 }
 
 -- | Represents the parameters to connect to a broker or a cluster of brokers.
@@ -314,8 +315,8 @@ watchHeartbeats conn timeout connThread = scheduleAtFixedRate rate $ do
     checkReceiveTimeout
   where
     rate = timeout * 1000 * 250 -- timeout / 4 in µs
-    receiveTimeout = rate * 4 * 2 -- 2*timeout in µs
-    sendTimeout = rate * 2 -- timeout/2 in µs
+    receiveTimeout = (fromIntegral rate) * 4 * 2 -- 2*timeout in µs
+    sendTimeout = (fromIntegral rate) * 2 -- timeout/2 in µs
 
     checkReceiveTimeout = check (connLastReceived conn) receiveTimeout
         (killConnection conn "killed connection after missing 2 consecutive heartbeats" connThread)
