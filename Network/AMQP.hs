@@ -59,6 +59,7 @@ module Network.AMQP (
     -- * Channel
     Channel,
     openChannel,
+    closeChannel,
     addReturnListener,
     qos,
 

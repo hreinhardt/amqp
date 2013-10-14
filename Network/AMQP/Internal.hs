@@ -469,6 +469,7 @@ channelReceiver chan = do
                     return ()
             )
     handleAsync (SimpleMethod (Channel_close _ (ShortString errorMsg) _ _)) = do
+        writeAssembly chan $ SimpleMethod Channel_close_ok
         closeChannel' chan errorMsg
         killThread =<< myThreadId
     handleAsync (SimpleMethod (Channel_flow active)) = do
@@ -500,6 +501,21 @@ channelReceiver chan = do
 addReturnListener :: Channel -> ((Message, PublishError) -> IO ()) -> IO ()
 addReturnListener chan listener = do
     modifyMVar_ (returnListeners chan) $ \listeners -> return $ listener:listeners
+
+
+-- | closes the channel, adhereing to the channel close protocol
+-- | TODO: before sending Channel_close, put the channel in closing mode to only accept Channel_close and Channel_close_ok (see spec 1.5.2.5)
+closeChannel :: Channel -> IO ()
+closeChannel chan = do
+    (SimpleMethod (Channel_close_ok)) <- request chan $ SimpleMethod $ Channel_close
+        --TODO: set these values
+        0 -- reply_code
+        (ShortString "") -- reply_text
+        0 -- class_id
+        0 -- method_id
+
+    closeChannel' chan "closed normally"
+
 
 -- closes the channel internally; but doesn't tell the server
 closeChannel' :: Channel -> Text -> IO ()
