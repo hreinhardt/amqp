@@ -45,7 +45,7 @@ spec = do
 
                 closeConnection conn
 
-        context "passive declaration when the queue DOES NOT exist" $ do
+        context "passive declaration when the exchange DOES NOT exist" $ do
             it "throws an exception" $ do
                 conn <- openConnection "127.0.0.1" "/" "guest" "guest"
                 ch   <- openChannel conn
