@@ -44,3 +44,14 @@ spec = do
                                                          exchangePassive = True})
 
                 closeConnection conn
+
+        context "passive declaration when the queue DOES NOT exist" $ do
+            it "throws an exception" $ do
+                conn <- openConnection "127.0.0.1" "/" "guest" "guest"
+                ch   <- openChannel conn
+
+                let x  = "haskell-amqp.exchanges.Xiz2mQozyYcFrQgGmN8r"
+                    ex = ChannelClosedException "NOT_FOUND - no exchange 'haskell-amqp.exchanges.Xiz2mQozyYcFrQgGmN8r' in vhost '/'"
+                (declareExchange ch $ newExchange {exchangeName = x, exchangePassive = True}) `shouldThrow` (== ex)
+
+                closeConnection conn
