@@ -28,3 +28,14 @@ spec = do
                  (declareExchange ch $ newExchange {exchangeName = eName, exchangePassive = True}) `shouldThrow` (== ex)
 
                  closeConnection conn
+
+         context "when exchange DOES NOT exist" $ do
+             it "throws an exception" $ do
+                 conn <- openConnection "127.0.0.1" "/" "guest" "guest"
+                 ch   <- openChannel conn
+
+                 let q  = "haskell-amqp.exchanges.GmN8rozyXiz2mQYcFrQg"
+                     ex = ChannelClosedException "NOT_FOUND - no exchange 'haskell-amqp.exchanges.GmN8rozyXiz2mQYcFrQg' in vhost '/'"
+                 (declareExchange ch $ newExchange {exchangeName = q, exchangePassive = True}) `shouldThrow` (== ex)
+
+                 closeConnection conn
