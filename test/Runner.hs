@@ -3,8 +3,9 @@ import Test.Hspec
 import qualified ConnectionSpec
 import qualified ChannelSpec
 import qualified QueueDeclareSpec
-import qualified QueueDeleteSpec       
+import qualified QueueDeleteSpec
 import qualified ExchangeDeclareSpec
+import qualified ExchangeDeleteSpec
 
 main :: IO ()
 main = hspec $ do
@@ -18,3 +19,5 @@ main = hspec $ do
     describe "ExchangeDeclareSpec" ExchangeDeclareSpec.spec
     -- queue.delete
     describe "QueueDeleteSpec"     QueueDeleteSpec.spec
+    -- exchange.delete
+    describe "ExchangeDeleteSpec"  ExchangeDeleteSpec.spec
