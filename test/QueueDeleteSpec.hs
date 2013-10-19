@@ -34,7 +34,7 @@ spec = do
                   ch   <- openChannel conn
 
                   let q  = "haskell-amqp.queues.GmN8rozyXiz2mQYcFrQg"
-                      ex = (ChannelClosedException "NOT_FOUND - no queue 'haskell-amqp.queues.GmN8rozyXiz2mQYcFrQg' in vhost '/'")
+                      ex = ChannelClosedException "NOT_FOUND - no queue 'haskell-amqp.queues.GmN8rozyXiz2mQYcFrQg' in vhost '/'"
                   (declareQueue ch $ newQueue {queueName = q, queuePassive = True}) `shouldThrow` (== ex)
 
                   closeConnection conn

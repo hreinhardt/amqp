@@ -50,3 +50,14 @@ spec = do
                 mn `shouldBe` 0
   
                 closeConnection conn
+
+        context "passive declaration when the queue DOES NOT exist" $ do
+            it "throws an exception" $ do
+                conn <- openConnection "127.0.0.1" "/" "guest" "guest"
+                ch   <- openChannel conn
+
+                let x  = "haskell-amqp.queues.mQozyYcFrQgGmN8Xiz2r"
+                    ex = ChannelClosedException "NOT_FOUND - no queue 'haskell-amqp.queues.mQozyYcFrQgGmN8Xiz2r' in vhost '/'"
+                (declareQueue ch $ newQueue {queueName = x, queuePassive = True}) `shouldThrow` (== ex)
+
+                closeConnection conn

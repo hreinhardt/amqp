@@ -23,3 +23,10 @@ spec = do
                                                    "haskell_amqp"
                                                    "haskell_amqp_password"
                 closeConnection conn
+
+        context "with custom vhost and valid credentials" $ do
+            it "raises an exception" $ do
+                let ex = ConnectionClosedException "Handshake failed. Please check the RabbitMQ logs for more information"
+                (openConnection "127.0.0.1" "haskell_amqp_testbed"
+                                            "NxqrbLaNiN3TAenNu:r9Pq]XwABuRs"
+                                            "RyRxfVDyrKjC8yhJ6htCp}P>FnJxfc") `shouldThrow` (== ex)
