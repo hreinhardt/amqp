@@ -51,7 +51,6 @@ spec = do
                 _ <- purgeQueue ch q
                 bindQueue ch q e ""
 
-                -- publishes using default exchange
                 publishMsg ch e ""
                     (newMsg {msgBody = (BL.pack "hello")})
                 threadDelay (100 * 100)
