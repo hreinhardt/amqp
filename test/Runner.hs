@@ -8,6 +8,8 @@ import qualified QueuePurgeSpec
 import qualified ExchangeDeclareSpec
 import qualified ExchangeDeleteSpec
 
+import qualified BasicPublishSpec
+
 main :: IO ()
 main = hspec $ do
     -- connection.*
@@ -24,3 +26,5 @@ main = hspec $ do
     describe "QueueDeleteSpec"     QueueDeleteSpec.spec
     -- queue.purge
     describe "QueuePurgeSpec"      QueuePurgeSpec.spec
+    -- basic.publish
+    describe "BasicPublishSpec"    BasicPublishSpec.spec
