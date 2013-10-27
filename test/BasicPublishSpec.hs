@@ -46,7 +46,7 @@ spec = do
                 _    <- declareExchange ch (newExchange {exchangeName = e,
                                                          exchangeType = "fanout",
                                                          exchangeDurable = True})
-                            
+
                 (_, _, _) <- declareQueue ch (newQueue {queueName = q, queueDurable = False})
                 _ <- purgeQueue ch q
                 bindQueue ch q e ""
