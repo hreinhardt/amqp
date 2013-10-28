@@ -53,7 +53,7 @@ spec = do
 
                 publishMsg ch e ""
                     (newMsg {msgBody = (BL.pack "hello")})
-                threadDelay (100 * 100)
+                threadDelay (1000 * 100)
 
                 (_, n, _) <- declareQueue ch (newQueue {queueName = q, queueDurable = False})
                 n `shouldBe` 1
