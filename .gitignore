@@ -2,3 +2,5 @@ dist/
 *.o
 *.hi
 testing/
+.cabal-sandbox/*
+cabal.sandbox.config
