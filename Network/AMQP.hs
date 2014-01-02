@@ -156,13 +156,14 @@ data ExchangeOpts = ExchangeOpts
                     exchangePassive :: Bool, -- ^ (default 'False'); If set, the server will not create the exchange. The client can use this to check whether an exchange exists without modifying the server state.
                     exchangeDurable :: Bool, -- ^ (default 'True'); If set when creating a new exchange, the exchange will be marked as durable. Durable exchanges remain active when a server restarts. Non-durable exchanges (transient exchanges) are purged if/when a server restarts.
                     exchangeAutoDelete :: Bool, -- ^ (default 'False'); If set, the exchange is deleted when all queues have finished using it.
-                    exchangeInternal :: Bool -- ^ (default 'False'); If set, the exchange may not be used directly by publishers, but only when bound to other exchanges. Internal exchanges are used to construct wiring that is not visible to applications.
+                    exchangeInternal :: Bool, -- ^ (default 'False'); If set, the exchange may not be used directly by publishers, but only when bound to other exchanges. Internal exchanges are used to construct wiring that is not visible to applications.
+                    exchangeArguments  :: FieldTable -- ^ (default empty); A set of arguments for the declaration. The syntax and semantics of these arguments depends on the server implementation.
                 }
     deriving (Eq, Ord, Read, Show)
 
 -- | an 'ExchangeOpts' with defaults set; you must override at least the 'exchangeName' and 'exchangeType' fields.
 newExchange :: ExchangeOpts
-newExchange = ExchangeOpts "" "" False True False False
+newExchange = ExchangeOpts "" "" False True False False (FieldTable M.empty)
 
 -- | declares a new exchange on the AMQP server. Can be used like this: @declareExchange channel newExchange {exchangeName = \"myExchange\", exchangeType = \"fanout\"}@
 declareExchange :: Channel -> ExchangeOpts -> IO ()
@@ -176,7 +177,7 @@ declareExchange chan exchg = do
         (exchangeAutoDelete exchg)  -- auto_delete
         (exchangeInternal exchg) -- internal
         False -- nowait
-        (FieldTable M.empty))) -- arguments
+        (exchangeArguments exchg))) -- arguments
     return ()
 
 -- | @bindExchange chan destinationName sourceName routingKey@ binds the exchange to the exchange using the provided routing key
