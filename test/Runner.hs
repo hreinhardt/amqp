@@ -9,6 +9,7 @@ import qualified ExchangeDeclareSpec
 import qualified ExchangeDeleteSpec
 
 import qualified BasicPublishSpec
+import qualified BasicRejectSpec
 
 main :: IO ()
 main = hspec $ do
@@ -28,3 +29,5 @@ main = hspec $ do
     describe "QueuePurgeSpec"      QueuePurgeSpec.spec
     -- basic.publish
     describe "BasicPublishSpec"    BasicPublishSpec.spec
+    -- basic.reject
+    describe "BasicRejectSpec"    BasicRejectSpec.spec
