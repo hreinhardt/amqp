@@ -99,6 +99,7 @@ module Network.AMQP (
     publishMsg',
     getMsg,
     rejectMsg,
+    rejectEnv,
     recoverMsgs,
 
     ackMsg,
@@ -453,6 +454,12 @@ rejectMsg chan deliveryTag requeue =
         deliveryTag -- delivery_tag
         requeue -- requeue
         ))
+
+-- | Reject a message. This is a wrapper for 'rejectMsg' in case you have the 'Envelope' at hand.
+rejectEnv :: Envelope
+          -> Bool -- ^ requeue
+          -> IO ()
+rejectEnv env requeue = rejectMsg (envChannel env) (envDeliveryTag env) requeue
 
 -- | @recoverMsgs chan requeue@ asks the broker to redeliver all messages that were received but not acknowledged on the specified channel.
 --If @requeue==False@, the message will be redelivered to the original recipient. If @requeue==True@, the server will attempt to requeue the message, potentially then delivering it to an alternative subscriber.
