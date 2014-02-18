@@ -11,7 +11,6 @@ import Data.Maybe
 import Data.Text (Text)
 import Data.Typeable
 import Network
-import System.IO
 
 import qualified Control.Exception as CE
 import qualified Data.ByteString as BS
@@ -23,6 +22,7 @@ import qualified Data.IntMap as IM
 import qualified Data.Sequence as Seq
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as E
+import qualified Network.Connection as Conn
 
 import Network.AMQP.Protocol
 import Network.AMQP.Types
@@ -126,7 +126,7 @@ Outgoing Data: Application -> Socket
 -}
 
 data Connection = Connection {
-                    connHandle :: Handle,
+                    connHandle :: Conn.Connection,
                     connChannels :: (MVar (IM.IntMap (Channel, ThreadId))), --open channels (channelID => (Channel, ChannelThread))
                     connMaxFrameSize :: Int, --negotiated maximum frame size
                     connClosed :: MVar (Maybe String),
@@ -148,8 +148,19 @@ data ConnectionOpts = ConnectionOpts {
                             coAuth :: ![SASLMechanism], -- ^ The 'SASLMechanism's to use for authenticating with the broker.
                             coMaxFrameSize :: !(Maybe Word32), -- ^ The maximum frame size to be used. If not specified, no limit is assumed.
                             coHeartbeatDelay :: !(Maybe Word16), -- ^ The delay in seconds, after which the client expects a heartbeat frame from the broker. If 'Nothing', the value suggested by the broker is used. Use @Just 0@ to disable the heartbeat mechnism.
-                            coMaxChannel :: !(Maybe Word16) -- ^ The maximum number of channels the client will use.
+                            coMaxChannel :: !(Maybe Word16), -- ^ The maximum number of channels the client will use.
+                            coTLSSettings :: Maybe TLSSettings -- ^ Whether or not to connect to servers using TLS. See http://www.rabbitmq.com/ssl.html for details.
                         }
+-- | Represents the kind of TLS connection to establish.
+data TLSSettings =
+    TLSTrusted   -- ^ Require trusted certificates (Recommended).
+  | TLSUntrusted -- ^ Allow untrusted certificates (Discouraged. Vulnerable to man-in-the-middle attacks)
+
+connectionTLSSettings :: TLSSettings -> Maybe Conn.TLSSettings
+connectionTLSSettings tlsSettings =
+  Just $ case tlsSettings of
+    TLSTrusted -> Conn.TLSSettingsSimple False False False
+    TLSUntrusted -> Conn.TLSSettingsSimple True False False
 
 -- | A 'SASLMechanism' is described by its name ('saslName'), its initial response ('saslInitialResponse'), and an optional function ('saslChallengeFunc') that
 -- transforms a security challenge provided by the server into response, which is then sent back to the server for verification.
@@ -188,13 +199,13 @@ openConnection'' :: ConnectionOpts -> IO Connection
 openConnection'' connOpts = withSocketsDo $ do
     handle <- connect $ coServers connOpts
     (maxFrameSize, heartbeatTimeout) <- CE.handle (\(_ :: CE.IOException) -> CE.throwIO $ ConnectionClosedException "Handshake failed. Please check the RabbitMQ logs for more information") $ do
-        BL.hPut handle $ BPut.runPut $ do
-            BPut.putByteString $ BC.pack "AMQP"
-            BPut.putWord8 1
-            BPut.putWord8 1 --TCP/IP
-            BPut.putWord8 0 --Major Version
-            BPut.putWord8 9 --Minor Version
-        hFlush handle
+        Conn.connectionPut handle $ BS.append (BC.pack "AMQP")
+                (BS.pack [
+                          1
+                        , 1 --TCP/IP
+                        , 0 --Major Version
+                        , 9 --Minor Version
+                       ])
 
         -- S: connection.start
         Frame 0 (MethodPayload (Connection_start _ _ _ (LongString serverMechanisms) _)) <- readFrame handle
@@ -236,7 +247,7 @@ openConnection'' connOpts = withSocketsDo $ do
     --spawn the connectionReceiver
     connThread <- forkIO $ CE.finally (connectionReceiver conn) $ do
                 -- try closing socket
-                CE.catch (hClose handle) (\(_ :: CE.SomeException) -> return ())
+                CE.catch (Conn.connectionClose handle) (\(_ :: CE.SomeException) -> return ())
 
                 -- mark as closed
                 modifyMVar_ cClosed $ return . Just . maybe "unknown reason" id
@@ -261,7 +272,13 @@ openConnection'' connOpts = withSocketsDo $ do
     return conn
   where
     connect ((host, port) : rest) = do
-        result <- CE.try (connectTo host $ PortNumber port)
+        ctx <- Conn.initConnectionContext
+        result <- CE.try (Conn.connectTo ctx $ Conn.ConnectionParams
+                              { Conn.connectionHostname  = host
+                              , Conn.connectionPort      = port
+                              , Conn.connectionUseSecure = tlsSettings
+                              , Conn.connectionUseSocks  = Nothing
+                              })
         either
             (\(ex :: CE.SomeException) -> do
                 putStrLn $ "Error connecting to "++show (host, port)++": "++show ex
@@ -269,6 +286,7 @@ openConnection'' connOpts = withSocketsDo $ do
             (return)
             result
     connect [] = CE.throwIO $ ConnectionClosedException $ "Could not connect to any of the provided brokers: " ++ show (coServers connOpts)
+    tlsSettings = maybe Nothing connectionTLSSettings (coTLSSettings connOpts)
     selectSASLMechanism handle serverMechanisms =
         let serverSaslList = T.split (== ' ') $ E.decodeUtf8 serverMechanisms
             clientMechanisms = coAuth connOpts
@@ -301,7 +319,7 @@ openConnection'' connOpts = withSocketsDo $ do
         True))) -- insist; deprecated in 0-9-1
 
     abortHandshake handle msg = do
-        hClose handle
+        Conn.connectionClose handle
         CE.throwIO $ ConnectionClosedException msg
 
     abortIfNothing m handle msg = case m of
@@ -375,13 +393,15 @@ addConnectionClosedHandler conn ifClosed handler = do
             -- otherwise add it to the list
             _ -> modifyMVar_ (connClosedHandlers conn) $ \old -> return $ handler:old
 
-readFrame :: Handle -> IO Frame
+readFrame :: Conn.Connection -> IO Frame
 readFrame handle = do
-    dat <- BL.hGet handle 7
+    strictDat <- connectionGetExact handle 7
+    let dat = toLazy strictDat
     -- NB: userError returns an IOException so it will be catched in 'connectionReceiver'
     when (BL.null dat) $ CE.throwIO $ userError "connection not open"
     let len = fromIntegral $ peekFrameSize dat
-    dat' <- BL.hGet handle (len+1) -- +1 for the terminating 0xCE
+    strictDat' <- connectionGetExact handle (len+1) -- +1 for the terminating 0xCE
+    let dat' = toLazy strictDat'
     when (BL.null dat') $ CE.throwIO $ userError "connection not open"
     let ret = runGetOrFail get (BL.append dat dat')
     case ret of
@@ -390,10 +410,18 @@ readFrame handle = do
             error $ "readFrame: parser should read " ++ show (len+8) ++ " bytes; but read " ++ show consumedBytes
         Right (_, _, frame) -> return frame
 
-writeFrame :: Handle -> Frame -> IO ()
+-- belongs in connection package and will be removed once it lands there
+connectionGetExact :: Conn.Connection -> Int -> IO BS.ByteString
+connectionGetExact conn x = loop BS.empty 0
+  where loop bs y
+          | y == x = return bs
+          | otherwise = do
+            next <- Conn.connectionGet conn (x - y)
+            loop (BS.append bs next) (y + (BS.length next))
+
+writeFrame :: Conn.Connection -> Frame -> IO ()
 writeFrame handle f = do
-    BL.hPut handle . runPut . put $ f
-    hFlush handle
+    Conn.connectionPut handle . toStrict . runPut . put $ f
 
 ------------------------ CHANNEL -----------------------------
 
