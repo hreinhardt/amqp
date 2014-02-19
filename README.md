@@ -6,6 +6,13 @@ Library for accessing RabbitMQ from Haskell. Please see the [Hackage docs](http:
 Changelog
 =========
 
+### Version 0.8.0
+
+* TLS support
+* new helper function rejectEnv
+* new field exchangeArguments in ExchangeOpts
+* new module Network.AMQP.Lifted with consumeMsgs functions lifted to MonadBaseControl
+
 ### Version 0.7.0
 
 * new function fromURI to parse AMQP URIs
