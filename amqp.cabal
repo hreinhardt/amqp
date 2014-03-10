@@ -65,8 +65,7 @@ test-suite spec
       QueuePurgeSpec
   build-depends:
       base >= 4 && < 5
-    , 
-      binary >= 0.5
+    , binary >= 0.5
     , containers>=0.2
     , bytestring>=0.9
     , network>=2.2.3.1
