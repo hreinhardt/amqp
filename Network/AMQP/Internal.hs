@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns, DeriveDataTypeable, OverloadedStrings, ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns, CPP, DeriveDataTypeable, OverloadedStrings, ScopedTypeVariables #-}
 module Network.AMQP.Internal where
 
 import Control.Concurrent
@@ -403,12 +403,20 @@ readFrame handle = do
     strictDat' <- connectionGetExact handle (len+1) -- +1 for the terminating 0xCE
     let dat' = toLazy strictDat'
     when (BL.null dat') $ CE.throwIO $ userError "connection not open"
+#if MIN_VERSION_binary(0, 7, 0)
     let ret = runGetOrFail get (BL.append dat dat')
     case ret of
         Left (_, _, errMsg) -> error $ "readFrame fail: " ++ errMsg
         Right (_, consumedBytes, _) | consumedBytes /= fromIntegral (len+8) ->
             error $ "readFrame: parser should read " ++ show (len+8) ++ " bytes; but read " ++ show consumedBytes
         Right (_, _, frame) -> return frame
+#else
+    let (frame, _, consumedBytes) = runGetState get (BL.append dat dat') 0
+    if consumedBytes /= fromIntegral (len+8)
+        then error $ "readFrameSock: parser should read "++show (len+8)++" bytes; but read "++show consumedBytes
+        else return ()
+    return frame
+#endif
 
 -- belongs in connection package and will be removed once it lands there
 connectionGetExact :: Conn.Connection -> Int -> IO BS.ByteString

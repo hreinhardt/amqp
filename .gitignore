@@ -4,3 +4,4 @@ dist/
 testing/
 .cabal-sandbox/*
 cabal.sandbox.config
+.hub
