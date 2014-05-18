@@ -29,9 +29,10 @@ Library
     split>=0.2,
     clock >= 0.4.0.1,
     monad-control >= 0.3,
-    connection == 0.2.*
+    connection == 0.2.*,
+    vector
   Exposed-modules:    Network.AMQP, Network.AMQP.Types, Network.AMQP.Lifted
-  Other-modules:      Network.AMQP.Generated, Network.AMQP.Helpers, Network.AMQP.Protocol, Network.AMQP.Internal
+  Other-modules:      Network.AMQP.ChannelAllocator, Network.AMQP.Generated, Network.AMQP.Helpers, Network.AMQP.Protocol, Network.AMQP.Internal
   GHC-Options:        -Wall
 
 Executable amqp-builder
@@ -76,3 +77,4 @@ test-suite spec
     , hspec              >= 1.3
     , hspec-expectations >= 0.3.3
     , connection == 0.2.*
+    , vector

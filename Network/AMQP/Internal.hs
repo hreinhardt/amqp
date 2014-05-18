@@ -28,6 +28,7 @@ import Network.AMQP.Protocol
 import Network.AMQP.Types
 import Network.AMQP.Helpers
 import Network.AMQP.Generated
+import Network.AMQP.ChannelAllocator
 
 
 data DeliveryMode = Persistent -- ^ the message will survive server restarts (if the queue is durable)
@@ -127,13 +128,13 @@ Outgoing Data: Application -> Socket
 
 data Connection = Connection {
                     connHandle :: Conn.Connection,
-                    connChannels :: (MVar (IM.IntMap (Channel, ThreadId))), --open channels (channelID => (Channel, ChannelThread))
+                    connChanAllocator :: ChannelAllocator,
+                    connChannels :: MVar (IM.IntMap (Channel, ThreadId)), -- open channels (channelID => (Channel, ChannelThread))
                     connMaxFrameSize :: Int, --negotiated maximum frame size
                     connClosed :: MVar (Maybe String),
                     connClosedLock :: MVar (), -- used by closeConnection to block until connection-close handshake is complete
                     connWriteLock :: MVar (), -- to ensure atomic writes to the socket
                     connClosedHandlers :: MVar [IO ()],
-                    lastChannelID :: MVar Int, -- for auto-incrementing the channelIDs
                     connLastReceived :: MVar Int64, -- the timestamp from a monotonic clock when the last frame was received
                     connLastSent :: MVar Int64 -- the timestamp from a monotonic clock when the last frame was written
                 }
@@ -235,14 +236,15 @@ openConnection'' connOpts = withSocketsDo $ do
 
     --build Connection object
     cChannels <- newMVar IM.empty
-    lastChanID <- newMVar 0
     cClosed <- newMVar Nothing
+    cChanAllocator <- newChannelAllocator
+    _ <- allocateChannel cChanAllocator -- allocate channel 0
     writeLock <- newMVar ()
     ccl <- newEmptyMVar
     cClosedHandlers <- newMVar []
     cLastReceived <- getTimestamp >>= newMVar
     cLastSent <- getTimestamp >>= newMVar
-    let conn = Connection handle cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cClosedHandlers lastChanID cLastReceived cLastSent
+    let conn = Connection handle cChanAllocator cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cClosedHandlers cLastReceived cLastSent
 
     --spawn the connectionReceiver
     connThread <- forkIO $ CE.finally (connectionReceiver conn) $ do
@@ -539,11 +541,14 @@ addReturnListener chan listener = do
 -- closes the channel internally; but doesn't tell the server
 closeChannel' :: Channel -> Text -> IO ()
 closeChannel' c reason = do
-    modifyMVar_ (connChannels $ connection c) $ \old -> return $ IM.delete (fromIntegral $ channelID c) old
-    -- mark channel as closed
     modifyMVar_ (chanClosed c) $ \x -> do
         if isNothing x
             then do
+                modifyMVar_ (connChannels $ connection c) $ \old -> do
+                    ret <- freeChannel (connChanAllocator $ connection c) $ fromIntegral $ channelID c
+                    when (not ret) $ putStrLn "closeChannel error: channel already freed"
+                    return $ IM.delete (fromIntegral $ channelID c) old
+
                 void $ killLock $ chanActive c
                 killOutstandingResponses $ outstandingResponses c
                 return $ Just $ maybe (T.unpack reason) id x
@@ -562,23 +567,20 @@ openChannel c = do
     outRes <- newMVar Seq.empty
     lastConsTag <- newMVar 0
     ca <- newLock
-
     closed <- newMVar Nothing
     conss <- newMVar M.empty
     listeners <- newMVar []
 
-    --get a new unused channelID
-    newChannelID <- modifyMVar (lastChannelID c) $ \x -> return (x+1, x+1)
-
-    let newChannel = Channel c newInQueue outRes (fromIntegral newChannelID) lastConsTag ca closed conss listeners
-
-    thrID <- forkIO $ CE.finally (channelReceiver newChannel)
-        (closeChannel' newChannel "closed")
-
     --add new channel to connection's channel map
-    modifyMVar_ (connChannels c) (return . IM.insert newChannelID (newChannel, thrID))
+    newChannel <- modifyMVar (connChannels c) $ \mp -> do
+        newChannelID <- allocateChannel (connChanAllocator c)
+        let newChannel = Channel c newInQueue outRes (fromIntegral newChannelID) lastConsTag ca closed conss listeners
+        thrID <- forkIO $ CE.finally (channelReceiver newChannel)
+            (closeChannel' newChannel "closed")
+        when (IM.member newChannelID mp) $ CE.throwIO $ userError "openChannel fail: channel already open"
+        return (IM.insert newChannelID (newChannel, thrID) mp, newChannel)
 
-    (SimpleMethod (Channel_open_ok _)) <- request newChannel (SimpleMethod (Channel_open (ShortString "")))
+    SimpleMethod (Channel_open_ok _) <- request newChannel (SimpleMethod (Channel_open (ShortString "")))
     return newChannel
 
 -- | closes a channel. It is typically not necessary to manually call this as closing a connection will implicitly close all channels.
@@ -586,7 +588,6 @@ closeChannel :: Channel -> IO ()
 closeChannel c = do
     SimpleMethod Channel_close_ok <- request c $ SimpleMethod $ Channel_close 0 (ShortString "") 0 0
     closeChannel' c "user called closeChannel"
-    return ()
 
 -- | writes multiple frames to the channel atomically
 writeFrames :: Channel -> [FramePayload] -> IO ()
