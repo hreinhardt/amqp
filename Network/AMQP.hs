@@ -54,6 +54,7 @@ module Network.AMQP (
     openConnection,
     openConnection',
     openConnection'',
+    closeChannel,
     closeConnection,
     addConnectionClosedHandler,
 

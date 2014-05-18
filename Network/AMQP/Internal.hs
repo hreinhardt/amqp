@@ -556,8 +556,6 @@ closeChannel' c reason = do
             return undefined
 
 -- | opens a new channel on the connection
---
--- There's currently no closeChannel method, but you can always just close the connection (the maximum number of channels is 65535).
 openChannel :: Connection -> IO Channel
 openChannel c = do
     newInQueue <- newChan
@@ -582,6 +580,13 @@ openChannel c = do
 
     (SimpleMethod (Channel_open_ok _)) <- request newChannel (SimpleMethod (Channel_open (ShortString "")))
     return newChannel
+
+-- | closes a channel. It is typically not necessary to manually call this as closing a connection will implicitly close all channels.
+closeChannel :: Channel -> IO ()
+closeChannel c = do
+    SimpleMethod Channel_close_ok <- request c $ SimpleMethod $ Channel_close 0 (ShortString "") 0 0
+    closeChannel' c "user called closeChannel"
+    return ()
 
 -- | writes multiple frames to the channel atomically
 writeFrames :: Channel -> [FramePayload] -> IO ()
