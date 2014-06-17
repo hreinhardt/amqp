@@ -39,6 +39,6 @@ spec = do
                 conn <- openConnection "127.0.0.1" "/" "guest" "guest"
                 ch   <- openChannel conn
 
-                qos ch 0 5
+                qos ch 0 5 False
 
                 closeConnection conn
