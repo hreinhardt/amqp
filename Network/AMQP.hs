@@ -563,18 +563,20 @@ rabbitCRdemo loginName loginPassword = SASLMechanism "RABBIT-CR-DEMO" initialRes
     initialResponse = E.encodeUtf8 loginName
     challengeResponse = return $ (E.encodeUtf8 "My password is ") `BS.append` (E.encodeUtf8 loginPassword)
 
--- | @qos chan prefetchSize prefetchCount@ limits the amount of data the server
+-- | @qos chan prefetchSize prefetchCount global@ limits the amount of data the server
 -- delivers before requiring acknowledgements. @prefetchSize@ specifies the
 -- number of bytes and @prefetchCount@ the number of messages. In both cases
 -- the value 0 means unlimited.
 --
+-- The meaning of the @global@ flag is explained here: <http://www.rabbitmq.com/consumer-prefetch.html>
+--
 -- NOTE: RabbitMQ does not implement prefetchSize and will throw an exception if it doesn't equal 0.
-qos :: Channel -> Word32 -> Word16 -> IO ()
-qos chan prefetchSize prefetchCount = do
+qos :: Channel -> Word32 -> Word16 -> Bool -> IO ()
+qos chan prefetchSize prefetchCount global = do
     (SimpleMethod Basic_qos_ok) <- request chan (SimpleMethod (Basic_qos
         prefetchSize
         prefetchCount
-        False
+        global
         ))
     return ()
 

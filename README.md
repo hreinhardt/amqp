@@ -6,6 +6,10 @@ Library for accessing RabbitMQ from Haskell. Please see the [Hackage docs](http:
 Changelog
 =========
 
+### Version 0.9.0
+
+* add 'global' flag for qos
+
 ### Version 0.8.3
 
 * implement closeChannel
