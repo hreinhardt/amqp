@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns, CPP, DeriveDataTypeable, OverloadedStrings, ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns, CPP, OverloadedStrings, ScopedTypeVariables #-}
 module Network.AMQP.Internal where
 
 import Control.Concurrent
@@ -9,7 +9,6 @@ import Data.Binary.Put as BPut
 import Data.Int (Int64)
 import Data.Maybe
 import Data.Text (Text)
-import Data.Typeable
 import Network
 
 import qualified Control.Exception as CE
@@ -141,8 +140,6 @@ data Connection = Connection {
 
 -- | Represents the parameters to connect to a broker or a cluster of brokers.
 -- See 'defaultConnectionOpts'.
---
--- /NOTICE/: The field 'coMaxChannel' was only added for future use, as the respective functionality is not yet implemented.
 data ConnectionOpts = ConnectionOpts {
                             coServers :: ![(String, PortNumber)], -- ^ A list of host-port pairs. Useful in a clustered setup to connect to the first available host.
                             coVHost :: !Text, -- ^ The VHost to connect to.
@@ -199,7 +196,7 @@ connectionReceiver conn = do
 openConnection'' :: ConnectionOpts -> IO Connection
 openConnection'' connOpts = withSocketsDo $ do
     handle <- connect $ coServers connOpts
-    (maxFrameSize, heartbeatTimeout) <- CE.handle (\(_ :: CE.IOException) -> CE.throwIO $ ConnectionClosedException "Handshake failed. Please check the RabbitMQ logs for more information") $ do
+    (maxFrameSize, maxChannel, heartbeatTimeout) <- CE.handle (\(_ :: CE.IOException) -> CE.throwIO $ ConnectionClosedException "Handshake failed. Please check the RabbitMQ logs for more information") $ do
         Conn.connectionPut handle $ BS.append (BC.pack "AMQP")
                 (BS.pack [
                           1
@@ -215,15 +212,17 @@ openConnection'' connOpts = withSocketsDo $ do
         -- C: start_ok
         writeFrame handle $ start_ok selectedSASL
         -- S: secure or tune
-        Frame 0 (MethodPayload (Connection_tune _ frame_max sendHeartbeat)) <- handleSecureUntilTune handle selectedSASL
+        Frame 0 (MethodPayload (Connection_tune channel_max frame_max sendHeartbeat)) <- handleSecureUntilTune handle selectedSASL
         -- C: tune_ok
         let maxFrameSize = chooseMin frame_max $ coMaxFrameSize connOpts
             finalHeartbeatSec = fromMaybe sendHeartbeat (coHeartbeatDelay connOpts)
             heartbeatTimeout = mfilter (/=0) (Just finalHeartbeatSec)
 
+            fixChanNum x = if x == 0 then 65535 else x
+            maxChannel = chooseMin (fixChanNum channel_max) $ fmap fixChanNum $ coMaxChannel connOpts
+
         writeFrame handle (Frame 0 (MethodPayload
-            --TODO: handle channel_max
-            (Connection_tune_ok 0 maxFrameSize finalHeartbeatSec)
+            (Connection_tune_ok maxChannel maxFrameSize finalHeartbeatSec)
             ))
         -- C: open
         writeFrame handle open
@@ -232,12 +231,12 @@ openConnection'' connOpts = withSocketsDo $ do
         Frame 0 (MethodPayload (Connection_open_ok _)) <- readFrame handle
 
         -- Connection established!
-        return (maxFrameSize, heartbeatTimeout)
+        return (maxFrameSize, maxChannel, heartbeatTimeout)
 
     --build Connection object
     cChannels <- newMVar IM.empty
     cClosed <- newMVar Nothing
-    cChanAllocator <- newChannelAllocator
+    cChanAllocator <- newChannelAllocator $ fromIntegral maxChannel
     _ <- allocateChannel cChanAllocator -- allocate channel 0
     writeLock <- newMVar ()
     ccl <- newEmptyMVar
@@ -677,12 +676,3 @@ throwMostRelevantAMQPException chan = do
             case chc of
                 Just r -> CE.throwIO $ ChannelClosedException r
                 Nothing -> CE.throwIO $ ConnectionClosedException "unknown reason"
-
------------------------------ EXCEPTIONS ---------------------------
-
-data AMQPException =
-    -- | the 'String' contains the reason why the channel was closed
-    ChannelClosedException String
-    | ConnectionClosedException String -- ^ String may contain a reason
-  deriving (Typeable, Show, Ord, Eq)
-instance CE.Exception AMQPException

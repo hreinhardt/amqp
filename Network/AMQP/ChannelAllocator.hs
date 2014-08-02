@@ -1,28 +1,37 @@
 module Network.AMQP.ChannelAllocator where
 
 import qualified Data.Vector.Mutable as V
+import Control.Exception (throwIO)
 import Data.Word
 import Data.Bits
 
-newtype ChannelAllocator = ChannelAllocator (V.IOVector Word64)
+import Network.AMQP.Types
 
-newChannelAllocator :: IO ChannelAllocator
-newChannelAllocator =
-    fmap ChannelAllocator $ V.replicate 1024 0
+data ChannelAllocator = ChannelAllocator Int -- highest permitted channel id
+                                         (V.IOVector Word64)
+
+
+newChannelAllocator :: Int -> IO ChannelAllocator
+newChannelAllocator maxChannel =
+    fmap (ChannelAllocator maxChannel) $ V.replicate 1024 0
 
 allocateChannel :: ChannelAllocator -> IO Int
-allocateChannel (ChannelAllocator c) = do
+allocateChannel (ChannelAllocator maxChannel c) = do
     maybeIx <- findFreeIndex c
     case maybeIx of
         Just chunk -> do
             word <- V.read c chunk
             let offset = findUnsetBit word
-            V.write c chunk (setBit word offset)
-            return (chunk*64 + offset)
-        Nothing -> error "all channels are already allocated"
+            let channelID = chunk*64 + offset
+            if channelID > maxChannel
+                then throwIO $ AllChannelsAllocatedException maxChannel
+                else do
+                    V.write c chunk (setBit word offset)
+                    return channelID
+        Nothing -> throwIO $ AllChannelsAllocatedException maxChannel
 
 freeChannel :: ChannelAllocator -> Int -> IO Bool
-freeChannel (ChannelAllocator c) ix = do
+freeChannel (ChannelAllocator _maxChannel c) ix = do
     let (chunk, offset) = divMod ix 64
     word <- V.read c chunk
     if testBit word offset

@@ -1,8 +1,9 @@
-{-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE BangPatterns, DeriveDataTypeable #-}
 -- |
 --
 -- This module contains data-types specified in the AMQP spec
 module Network.AMQP.Types (
+    AMQPException(..),
     Octet,
     Bit,
     ChannelID,
@@ -27,11 +28,23 @@ import Data.Binary.IEEE754
 import Data.Binary.Put
 import Data.Char
 import Data.Text (Text)
+import Data.Typeable
 
+import qualified Control.Exception as CE
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map as M
 import qualified Data.Text.Encoding as T
+
+
+data AMQPException =
+    -- | the 'String' contains the reason why the channel was closed
+    ChannelClosedException String
+    | ConnectionClosedException String -- ^ String may contain a reason
+    | AllChannelsAllocatedException Int -- ^ the 'Int' contains the channel-max property of the connection (i.e. the highest permitted channel id)
+  deriving (Typeable, Show, Ord, Eq)
+instance CE.Exception AMQPException
+
 
 -- performs runGet on a bytestring until the string is empty
 readMany :: (Show a, Binary a) => BL.ByteString -> [a]
