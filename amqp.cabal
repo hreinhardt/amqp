@@ -1,5 +1,5 @@
 Name:                amqp
-Version:             0.10
+Version:             0.10.1
 Synopsis:            Client library for AMQP servers (currently only RabbitMQ)
 Description:         Client library for AMQP servers (currently only RabbitMQ)
                      .
@@ -17,13 +17,16 @@ Cabal-Version:       >=1.8
 Extra-source-files:  examples/ExampleConsumer.hs,
                      examples/ExampleProducer.hs
 
+flag network-uri
+   description: Get Network.URI from the network-uri package
+   default: True
+
 Library
-  Build-Depends:      
+  Build-Depends:
     base >= 4 && < 5,
     binary >= 0.5,
     containers>=0.2,
     bytestring>=0.9,
-    network>=2.2.3.1,
     data-binary-ieee754>=0.4.2.1,
     text>=0.11.2,
     split>=0.2,
@@ -31,6 +34,11 @@ Library
     monad-control >= 0.3,
     connection == 0.2.*,
     vector
+  if flag(network-uri)
+     build-depends: network-uri >= 2.6, network > 2.6
+  else
+     build-depends: network < 2.6
+
   Exposed-modules:    Network.AMQP, Network.AMQP.Types, Network.AMQP.Lifted
   Other-modules:      Network.AMQP.ChannelAllocator, Network.AMQP.Generated, Network.AMQP.Helpers, Network.AMQP.Protocol, Network.AMQP.Internal
   GHC-Options:        -Wall
