@@ -77,7 +77,6 @@ test-suite spec
     , binary >= 0.5
     , containers>=0.2
     , bytestring>=0.9
-    , network>=2.2.3.1
     , data-binary-ieee754>=0.4.2.1
     , text>=0.11.2
     , split>=0.2
@@ -86,3 +85,7 @@ test-suite spec
     , hspec-expectations >= 0.3.3
     , connection == 0.2.*
     , vector
+  if flag(network-uri)
+     build-depends: network-uri >= 2.6, network > 2.6
+  else
+     build-depends: network < 2.6
