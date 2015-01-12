@@ -345,7 +345,7 @@ watchHeartbeats conn timeout connThread = scheduleAtFixedRate rate $ do
 
     check var timeout_µs action = withMVar var $ \lastFrameTime -> do
         time <- getTimestamp
-        when (time >= lastFrameTime + timeout_µs) $ do
+        when (lastFrameTime > 0 && time >= lastFrameTime + timeout_µs) $ do
             action
 
 updateLastSent :: Connection -> IO ()
