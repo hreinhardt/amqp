@@ -4,7 +4,7 @@ module Network.AMQP.Helpers where
 import Control.Concurrent
 import Control.Monad
 import Data.Int (Int64)
-import System.Clock
+import System.Time
 
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BL
@@ -42,11 +42,7 @@ chooseMin a (Just b) = min a b
 chooseMin a Nothing  = a
 
 getTimestamp :: IO Int64
-getTimestamp = fmap µs $ getTime Monotonic
-  where
-  	seconds spec = (fromIntegral . sec) spec * 1000 * 1000
-  	micros spec = (fromIntegral . nsec) spec `div` 1000
-  	µs spec = (seconds spec) + (micros spec)
+getTimestamp = getClockTime >>= \(TOD n m) -> return (read (show n ++ show m) :: Int64)
 
 scheduleAtFixedRate :: Int -> IO () -> IO ThreadId
 scheduleAtFixedRate interval_µs action = forkIO $ forever $ do
