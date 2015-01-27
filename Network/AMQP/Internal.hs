@@ -49,9 +49,16 @@ data Message = Message {
                 msgDeliveryMode :: Maybe DeliveryMode, -- ^ see 'DeliveryMode'
                 msgTimestamp :: Maybe Timestamp, -- ^ use in any way you like; this doesn't affect the way the message is handled
                 msgID :: Maybe Text, -- ^ use in any way you like; this doesn't affect the way the message is handled
+                msgType :: Maybe Text, -- ^ use in any way you like; this doesn't affect the way the message is handled
+                msgUserID :: Maybe Text,
+                msgApplicationID :: Maybe Text,
+                msgClusterID :: Maybe Text,
                 msgContentType :: Maybe Text,
+                msgContentEncoding :: Maybe Text,
                 msgReplyTo :: Maybe Text,
+                msgPriority :: Maybe Octet,
                 msgCorrelationID :: Maybe Text,
+                msgExpiration :: Maybe Text,
                 msgHeaders :: Maybe FieldTable
                 }
     deriving (Eq, Ord, Read, Show)
@@ -450,12 +457,17 @@ data Channel = Channel {
                 }
 
 msgFromContentHeaderProperties :: ContentHeaderProperties -> BL.ByteString -> Message
-msgFromContentHeaderProperties (CHBasic content_type _ headers delivery_mode _ correlation_id reply_to _ message_id timestamp _ _ _ _) body =
+msgFromContentHeaderProperties (CHBasic content_type content_encoding headers delivery_mode priority correlation_id reply_to expiration message_id timestamp message_type user_id application_id cluster_id) body =
     let msgId = fromShortString message_id
         contentType = fromShortString content_type
+        contentEncoding = fromShortString content_encoding
         replyTo = fromShortString reply_to
         correlationID = fromShortString correlation_id
-    in Message body (fmap intToDeliveryMode delivery_mode) timestamp msgId contentType replyTo correlationID headers
+        messageType = fromShortString message_type
+        userId = fromShortString user_id
+        applicationId = fromShortString application_id
+        clusterId = fromShortString cluster_id
+    in Message body (fmap intToDeliveryMode delivery_mode) timestamp msgId messageType userId applicationId clusterId contentType contentEncoding replyTo priority correlationID (fromShortString expiration) headers
   where
     fromShortString (Just (ShortString s)) = Just s
     fromShortString _ = Nothing
