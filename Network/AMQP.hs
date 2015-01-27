@@ -327,7 +327,7 @@ deleteQueue chan queue = do
 
 -- | a 'Msg' with defaults set; you should override at least 'msgBody'
 newMsg :: Message
-newMsg = Message (BL.empty) Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+newMsg = Message (BL.empty) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
 type ConsumerTag = Text
 
@@ -395,22 +395,21 @@ publishMsg' chan exchange routingKey mandatory msg = do
             mandatory -- mandatory; if true, the server might return the msg, which is currently not handled
             False) --immediate; not customizable, as it is currently not supported anymore by RabbitMQ
 
-            --TODO: add more of these to 'Message'
             (CHBasic
             (fmap ShortString $ msgContentType msg)
-            Nothing
+            (fmap ShortString $ msgContentEncoding msg)
             (msgHeaders msg)
             (fmap deliveryModeToInt $ msgDeliveryMode msg) -- delivery_mode
-            Nothing
+            (msgPriority msg)
             (fmap ShortString $ msgCorrelationID msg)
             (fmap ShortString $ msgReplyTo msg)
-            Nothing
+            (fmap ShortString $ msgExpiration msg)
             (fmap ShortString $ msgID msg)
             (msgTimestamp msg)
-            Nothing
-            Nothing
-            Nothing
-            Nothing
+            (fmap ShortString $ msgType msg)
+            (fmap ShortString $ msgUserID msg)
+            (fmap ShortString $ msgApplicationID msg)
+            (fmap ShortString $ msgClusterID msg)
             )
             (msgBody msg))
     return ()
