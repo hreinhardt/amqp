@@ -453,7 +453,8 @@ data Channel = Channel {
                     chanActive :: Lock, -- used for flow-control. if lock is closed, no content methods will be sent
                     chanClosed :: MVar (Maybe String),
                     consumers :: MVar (M.Map Text ((Message, Envelope) -> IO ())), -- who is consumer of a queue? (consumerTag => callback)
-                    returnListeners :: MVar ([(Message, PublishError) -> IO ()])
+                    returnListeners :: MVar ([(Message, PublishError) -> IO ()]),
+                    returnHandlers :: MVar [CE.SomeException -> IO ()]
                 }
 
 msgFromContentHeaderProperties :: ContentHeaderProperties -> BL.ByteString -> Message
@@ -549,6 +550,11 @@ addReturnListener :: Channel -> ((Message, PublishError) -> IO ()) -> IO ()
 addReturnListener chan listener = do
     modifyMVar_ (returnListeners chan) $ \listeners -> return $ listener:listeners
 
+-- | registers a callback function that is called whenever a channel is closed by an exception.
+addChannelClosedExceptionHandler :: Channel -> (CE.SomeException -> IO ()) -> IO ()
+addChannelClosedExceptionHandler chan handler = do
+    modifyMVar_ (returnHandlers chan) $ \handlers -> return $ handler:handlers
+
 -- closes the channel internally; but doesn't tell the server
 closeChannel' :: Channel -> Text -> IO ()
 closeChannel' c reason = do
@@ -581,13 +587,17 @@ openChannel c = do
     closed <- newMVar Nothing
     conss <- newMVar M.empty
     listeners <- newMVar []
+    handlers <- newMVar []
 
     --add new channel to connection's channel map
     newChannel <- modifyMVar (connChannels c) $ \mp -> do
         newChannelID <- allocateChannel (connChanAllocator c)
-        let newChannel = Channel c newInQueue outRes (fromIntegral newChannelID) lastConsTag ca closed conss listeners
-        thrID <- forkIO $ CE.finally (channelReceiver newChannel)
-            (closeChannel' newChannel "closed")
+        let newChannel = Channel c newInQueue outRes (fromIntegral newChannelID) lastConsTag ca closed conss listeners handlers
+        thrID <- forkFinally (channelReceiver newChannel) $ \res -> do
+                   closeChannel' newChannel "closed"
+                   case res of
+                     Right _ -> return ()
+                     Left ex -> readMVar handlers >>= mapM_ ($ ex)
         when (IM.member newChannelID mp) $ CE.throwIO $ userError "openChannel fail: channel already open"
         return (IM.insert newChannelID (newChannel, thrID) mp, newChannel)
 
