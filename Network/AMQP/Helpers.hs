@@ -2,6 +2,7 @@
 module Network.AMQP.Helpers where
 
 import Control.Concurrent
+import Control.Exception
 import Control.Monad
 import Data.Int (Int64)
 import System.Clock
@@ -52,3 +53,9 @@ scheduleAtFixedRate :: Int -> IO () -> IO ThreadId
 scheduleAtFixedRate interval_µs action = forkIO $ forever $ do
     action
     threadDelay interval_µs
+
+-- | Copy of base's 'forkFinally', to support GHC < 7.6.x
+forkFinally' :: IO a -> (Either SomeException a -> IO ()) -> IO ThreadId
+forkFinally' action and_then =
+  mask $ \restore ->
+    forkIO $ try (restore action) >>= and_then

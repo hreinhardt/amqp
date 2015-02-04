@@ -454,7 +454,7 @@ data Channel = Channel {
                     chanClosed :: MVar (Maybe String),
                     consumers :: MVar (M.Map Text ((Message, Envelope) -> IO ())), -- who is consumer of a queue? (consumerTag => callback)
                     returnListeners :: MVar ([(Message, PublishError) -> IO ()]),
-                    returnHandlers :: MVar [CE.SomeException -> IO ()]
+                    chanExceptionHandlers :: MVar [CE.SomeException -> IO ()]
                 }
 
 msgFromContentHeaderProperties :: ContentHeaderProperties -> BL.ByteString -> Message
@@ -551,9 +551,9 @@ addReturnListener chan listener = do
     modifyMVar_ (returnListeners chan) $ \listeners -> return $ listener:listeners
 
 -- | registers a callback function that is called whenever a channel is closed by an exception.
-addChannelClosedExceptionHandler :: Channel -> (CE.SomeException -> IO ()) -> IO ()
-addChannelClosedExceptionHandler chan handler = do
-    modifyMVar_ (returnHandlers chan) $ \handlers -> return $ handler:handlers
+addChannelExceptionHandler :: Channel -> (CE.SomeException -> IO ()) -> IO ()
+addChannelExceptionHandler chan handler = do
+    modifyMVar_ (chanExceptionHandlers chan) $ \handlers -> return $ handler:handlers
 
 -- closes the channel internally; but doesn't tell the server
 closeChannel' :: Channel -> Text -> IO ()
@@ -593,7 +593,7 @@ openChannel c = do
     newChannel <- modifyMVar (connChannels c) $ \mp -> do
         newChannelID <- allocateChannel (connChanAllocator c)
         let newChannel = Channel c newInQueue outRes (fromIntegral newChannelID) lastConsTag ca closed conss listeners handlers
-        thrID <- forkFinally (channelReceiver newChannel) $ \res -> do
+        thrID <- forkFinally' (channelReceiver newChannel) $ \res -> do
                    closeChannel' newChannel "closed"
                    case res of
                      Right _ -> return ()
