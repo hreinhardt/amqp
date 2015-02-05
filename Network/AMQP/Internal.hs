@@ -269,10 +269,10 @@ openConnection'' connOpts = withSocketsDo $ do
                 -- inform the channel threads downstream accordingly. Otherwise
                 -- just use a normal 'killThread' finaliser.
                 let finaliser = case res of
-                        Left ex -> flip throwTo ex
-                        Right _ -> killThread
+                        Left ex -> ex
+                        Right _ -> CE.toException CE.ThreadKilled
                 modifyMVar_ cChannels $ \x -> do
-                    mapM_ (finaliser . snd) $ IM.elems x
+                    mapM_ (flip CE.throwTo finaliser . snd) $ IM.elems x
                     return IM.empty
 
                 -- mark connection as closed, so all pending calls to 'closeConnection' can now return
