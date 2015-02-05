@@ -183,13 +183,16 @@ connectionReceiver conn = do
         updateLastReceived conn
         forwardToChannel chanID payload
         )
-        (\(e :: CE.IOException) -> myThreadId >>= killConnection conn (show e))
+        (\(e :: CE.IOException) -> myThreadId >>= killConnection conn (CE.toException e))
     connectionReceiver conn
   where
-    forwardToChannel 0 (MethodPayload Connection_close_ok) =  myThreadId >>= killConnection conn "closed by user"
+
+    closedByUserEx = ConnectionClosedException "closed by user"
+
+    forwardToChannel 0 (MethodPayload Connection_close_ok) =  myThreadId >>= killConnection conn (CE.toException closedByUserEx)
     forwardToChannel 0 (MethodPayload (Connection_close _ (ShortString errorMsg) _ _)) = do
         writeFrame (connHandle conn) $ Frame 0 $ MethodPayload Connection_close_ok
-        myThreadId >>= killConnection conn (T.unpack errorMsg)
+        myThreadId >>= killConnection conn (CE.toException . ConnectionClosedException . T.unpack $ errorMsg)
     forwardToChannel 0 HeartbeatPayload = return ()
     forwardToChannel 0 payload = putStrLn $ "Got unexpected msg on channel zero: " ++ show payload
     forwardToChannel chanID payload = do
@@ -253,23 +256,30 @@ openConnection'' connOpts = withSocketsDo $ do
     let conn = Connection handle cChanAllocator cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cClosedHandlers cLastReceived cLastSent
 
     --spawn the connectionReceiver
-    connThread <- forkIO $ CE.finally (connectionReceiver conn) $ do
+    connThread <- forkFinally' (connectionReceiver conn) $ \res -> do
                 -- try closing socket
                 CE.catch (Conn.connectionClose handle) (\(_ :: CE.SomeException) -> return ())
 
                 -- mark as closed
                 modifyMVar_ cClosed $ return . Just . maybe "unknown reason" id
 
-                --kill all channel-threads
+                -- kill all channel-threads, making sure the channel threads will
+                -- be killed taking into account the overall state of the
+                -- connection: if the thread died for an unexpected exception,
+                -- inform the channel threads downstream accordingly. Otherwise
+                -- just use a normal 'killThread' finaliser.
+                let finaliser = case res of
+                        Left ex -> ex
+                        Right _ -> CE.toException CE.ThreadKilled
                 modifyMVar_ cChannels $ \x -> do
-                    mapM_ (killThread . snd) $ IM.elems x
+                    mapM_ (flip CE.throwTo finaliser . snd) $ IM.elems x
                     return IM.empty
 
                 -- mark connection as closed, so all pending calls to 'closeConnection' can now return
                 void $ tryPutMVar ccl ()
 
                 -- notify connection-close-handlers
-                withMVar cClosedHandlers sequence
+                withMVar cClosedHandlers sequence_
 
     case heartbeatTimeout of
         Nothing      -> return ()
@@ -344,8 +354,10 @@ watchHeartbeats conn timeout connThread = scheduleAtFixedRate rate $ do
     receiveTimeout = (fromIntegral rate) * 4 * 2 -- 2*timeout in µs
     sendTimeout = (fromIntegral rate) * 2 -- timeout/2 in µs
 
+    skippedBeatEx = ConnectionClosedException "killed connection after missing 2 consecutive heartbeats"
+
     checkReceiveTimeout = check (connLastReceived conn) receiveTimeout
-        (killConnection conn "killed connection after missing 2 consecutive heartbeats" connThread)
+        (killConnection conn (CE.toException skippedBeatEx) connThread)
 
     checkSendTimeout = check (connLastSent conn) sendTimeout
         (writeFrame (connHandle conn) (Frame 0 HeartbeatPayload))
@@ -362,10 +374,10 @@ updateLastReceived :: Connection -> IO ()
 updateLastReceived conn = modifyMVar_ (connLastReceived conn) (const getTimestamp)
 
 -- | kill the connection thread abruptly
-killConnection :: Connection -> String -> ThreadId -> IO ()
-killConnection conn msg connThread = do
-    modifyMVar_ (connClosed conn) $ const $ return $ Just msg
-    killThread connThread
+killConnection :: Connection -> CE.SomeException -> ThreadId -> IO ()
+killConnection conn ex connThread = do
+    modifyMVar_ (connClosed conn) $ const $ return $ Just (show ex)
+    throwTo connThread ex
 
 -- | closes a connection
 --
@@ -453,7 +465,8 @@ data Channel = Channel {
                     chanActive :: Lock, -- used for flow-control. if lock is closed, no content methods will be sent
                     chanClosed :: MVar (Maybe String),
                     consumers :: MVar (M.Map Text ((Message, Envelope) -> IO ())), -- who is consumer of a queue? (consumerTag => callback)
-                    returnListeners :: MVar ([(Message, PublishError) -> IO ()])
+                    returnListeners :: MVar ([(Message, PublishError) -> IO ()]),
+                    chanExceptionHandlers :: MVar [CE.SomeException -> IO ()]
                 }
 
 msgFromContentHeaderProperties :: ContentHeaderProperties -> BL.ByteString -> Message
@@ -518,7 +531,7 @@ channelReceiver chan = do
             )
     handleAsync (SimpleMethod (Channel_close _ (ShortString errorMsg) _ _)) = do
         closeChannel' chan errorMsg
-        killThread =<< myThreadId
+        myThreadId >>= flip CE.throwTo (ConnectionClosedException . T.unpack $ errorMsg)
     handleAsync (SimpleMethod (Channel_flow active)) = do
         if active
             then openLock $ chanActive chan
@@ -548,6 +561,11 @@ channelReceiver chan = do
 addReturnListener :: Channel -> ((Message, PublishError) -> IO ()) -> IO ()
 addReturnListener chan listener = do
     modifyMVar_ (returnListeners chan) $ \listeners -> return $ listener:listeners
+
+-- | registers a callback function that is called whenever a channel is closed by an exception.
+addChannelExceptionHandler :: Channel -> (CE.SomeException -> IO ()) -> IO ()
+addChannelExceptionHandler chan handler = do
+    modifyMVar_ (chanExceptionHandlers chan) $ \handlers -> return $ handler:handlers
 
 -- closes the channel internally; but doesn't tell the server
 closeChannel' :: Channel -> Text -> IO ()
@@ -581,13 +599,17 @@ openChannel c = do
     closed <- newMVar Nothing
     conss <- newMVar M.empty
     listeners <- newMVar []
+    handlers <- newMVar []
 
     --add new channel to connection's channel map
     newChannel <- modifyMVar (connChannels c) $ \mp -> do
         newChannelID <- allocateChannel (connChanAllocator c)
-        let newChannel = Channel c newInQueue outRes (fromIntegral newChannelID) lastConsTag ca closed conss listeners
-        thrID <- forkIO $ CE.finally (channelReceiver newChannel)
-            (closeChannel' newChannel "closed")
+        let newChannel = Channel c newInQueue outRes (fromIntegral newChannelID) lastConsTag ca closed conss listeners handlers
+        thrID <- forkFinally' (channelReceiver newChannel) $ \res -> do
+                   closeChannel' newChannel "closed"
+                   case res of
+                     Right _ -> return ()
+                     Left ex -> readMVar handlers >>= mapM_ ($ ex)
         when (IM.member newChannelID mp) $ CE.throwIO $ userError "openChannel fail: channel already open"
         return (IM.insert newChannelID (newChannel, thrID) mp, newChannel)
 
