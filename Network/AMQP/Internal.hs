@@ -620,7 +620,10 @@ openChannel c = do
 closeChannel :: Channel -> IO ()
 closeChannel c = do
     SimpleMethod Channel_close_ok <- request c $ SimpleMethod $ Channel_close 0 (ShortString "") 0 0
-    closeChannel' c "user called closeChannel"
+    withMVar (connChannels $ connection c) $ \chans -> do
+        case IM.lookup (fromIntegral $ channelID c) chans of
+            Just (_, thrID) -> killThread thrID
+            Nothing -> return ()
 
 -- | writes multiple frames to the channel atomically
 writeFrames :: Channel -> [FramePayload] -> IO ()
