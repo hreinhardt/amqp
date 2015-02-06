@@ -6,6 +6,10 @@ Library for accessing RabbitMQ from Haskell. Please see the [Hackage docs](http:
 Changelog
 =========
 
+### Version 0.12.0
+
+* new function addChannelExceptionHandler
+
 ### Version 0.11.0
 
 * all content fields for messages are now supported
