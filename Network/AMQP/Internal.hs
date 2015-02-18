@@ -10,6 +10,7 @@ import Data.Int (Int64)
 import Data.Maybe
 import Data.Text (Text)
 import Network
+import System.IO (hPutStrLn, stderr)
 
 import qualified Control.Exception as CE
 import qualified Data.ByteString as BS
@@ -194,13 +195,13 @@ connectionReceiver conn = do
         writeFrame (connHandle conn) $ Frame 0 $ MethodPayload Connection_close_ok
         myThreadId >>= killConnection conn (CE.toException . ConnectionClosedException . T.unpack $ errorMsg)
     forwardToChannel 0 HeartbeatPayload = return ()
-    forwardToChannel 0 payload = putStrLn $ "Got unexpected msg on channel zero: " ++ show payload
+    forwardToChannel 0 payload = hPutStrLn stderr $ "Got unexpected msg on channel zero: " ++ show payload
     forwardToChannel chanID payload = do
         --got asynchronous msg => forward to registered channel
         withMVar (connChannels conn) $ \cs -> do
             case IM.lookup (fromIntegral chanID) cs of
                 Just c -> writeChan (inQueue $ fst c) payload
-                Nothing -> putStrLn $ "ERROR: channel not open " ++ show chanID
+                Nothing -> hPutStrLn stderr $ "ERROR: channel not open " ++ show chanID
 
 -- | Opens a connection to a broker specified by the given 'ConnectionOpts' parameter.
 openConnection'' :: ConnectionOpts -> IO Connection
@@ -299,7 +300,7 @@ openConnection'' connOpts = withSocketsDo $ do
                               })
         either
             (\(ex :: CE.SomeException) -> do
-                putStrLn $ "Error connecting to "++show (host, port)++": "++show ex
+                hPutStrLn stderr $ "Error connecting to "++show (host, port)++": "++show ex
                 connect rest)
             (return)
             result
@@ -524,7 +525,7 @@ channelReceiver chan = do
                                     envExchangeName = exchange, envRoutingKey = routingKey, envChannel = chan}
 
                     CE.catch (subscriber (msg, env))
-                        (\(e::CE.SomeException) -> putStrLn $ "AMQP callback threw exception: " ++ show e)
+                        (\(e::CE.SomeException) -> hPutStrLn stderr $ "AMQP callback threw exception: " ++ show e)
                 Nothing ->
                     -- got a message, but have no registered subscriber; so drop it
                     return ()
@@ -544,7 +545,7 @@ channelReceiver chan = do
             pubError = basicReturnToPublishError basicReturn
         withMVar (returnListeners chan) $ \listeners ->
             forM_ listeners $ \l -> CE.catch (l (msg, pubError)) $ \(ex :: CE.SomeException) ->
-                putStrLn $ "return listener on channel ["++(show $ channelID chan)++"] handling error ["++show pubError++"] threw exception: "++show ex
+                hPutStrLn stderr $ "return listener on channel ["++(show $ channelID chan)++"] handling error ["++show pubError++"] threw exception: "++show ex
     handleAsync m = error ("Unknown method: " ++ show m)
 
     basicReturnToPublishError (Basic_return code (ShortString errText) (ShortString exchange) (ShortString routingKey)) =
@@ -575,7 +576,7 @@ closeChannel' c reason = do
             then do
                 modifyMVar_ (connChannels $ connection c) $ \old -> do
                     ret <- freeChannel (connChanAllocator $ connection c) $ fromIntegral $ channelID c
-                    when (not ret) $ putStrLn "closeChannel error: channel already freed"
+                    when (not ret) $ hPutStrLn stderr "closeChannel error: channel already freed"
                     return $ IM.delete (fromIntegral $ channelID c) old
 
                 void $ killLock $ chanActive c
