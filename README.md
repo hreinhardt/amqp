@@ -6,6 +6,10 @@ Library for accessing RabbitMQ from Haskell. Please see the [Hackage docs](http:
 Changelog
 =========
 
+### Version 0.12.2
+
+* GHC 7.10 compatibility
+
 ### Version 0.12.1
 
 * error messages now go to stderr
