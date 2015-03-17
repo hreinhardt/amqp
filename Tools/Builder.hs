@@ -38,14 +38,14 @@ main = do
     let classes = map readClass $ findChildren (unqual "class") e :: [Class]
 
     -- generate data declaration
-    let dataDecl = "data MethodPayload = \n" ++ (concat $ L.intersperse "\t|" $ concatMap (writeDataDeclForClass domainMap) classes) ++ "\n\tderiving Show"
+    let dataDecl = "data MethodPayload = \n" ++ (concat $ L.intersperse "    |" $ concatMap (writeDataDeclForClass domainMap) classes) ++ "\n    deriving Show"
 
     -- generate binary instances for data-type
-    let binaryGetInst = concat $ map ("\t"++) $ concatMap (writeBinaryGetInstForClass domainMap) classes
-    let binaryPutInst = concat $ map ("\t"++) $ concatMap (writeBinaryPutInstForClass domainMap) classes
+    let binaryGetInst = concat $ map ("    "++) $ concatMap (writeBinaryGetInstForClass domainMap) classes
+    let binaryPutInst = concat $ map ("    "++) $ concatMap (writeBinaryPutInstForClass domainMap) classes
 
     -- generate content types
-    let contentHeaders = concat $ L.intersperse "\t|" $ map (writeContentHeaderForClass domainMap) classes
+    let contentHeaders = concat $ L.intersperse "    |" $ map (writeContentHeaderForClass domainMap) classes
     let contentHeadersGetInst = concatMap writeContentHeaderGetInstForClass classes
     let contentHeadersPutInst = concatMap writeContentHeaderPutInstForClass classes
     let contentHeadersClassIDs = concatMap writeContentHeaderClassIDsForClass classes
@@ -69,9 +69,9 @@ main = do
         "getClassIDOf :: ContentHeaderProperties -> ShortInt" ++ "\n" ++
         contentHeadersClassIDs ++ "\n" ++
 
-        "data ContentHeaderProperties = \n\t" ++
+        "data ContentHeaderProperties = \n    " ++
         contentHeaders ++
-        "\n\tderiving Show\n\n" ++
+        "\n    deriving Show\n\n" ++
 
         "--Bits need special handling because AMQP requires contiguous bits to be packed into a Word8\n" ++
         "-- | Packs up to 8 bits into a Word8\n" ++
@@ -121,12 +121,12 @@ main = do
         binaryPutInst ++
 
         -- get instances
-        "\tget = do\n" ++
-        "\t\tclassID <- getWord16be\n" ++
-        "\t\tmethodID <- getWord16be\n" ++
-        "\t\tcase (classID, methodID) of\n" ++
+        "    get = do\n" ++
+        "        classID <- getWord16be\n" ++
+        "        methodID <- getWord16be\n" ++
+        "        case (classID, methodID) of\n" ++
         binaryGetInst ++
-        "\t\t\tx -> error (\"Unexpected classID and methodID: \" ++ show x)" ++ "\n" ++
+        "            x -> error (\"Unexpected classID and methodID: \" ++ show x)" ++ "\n" ++
 
         -- data declaration
         dataDecl)
@@ -163,7 +163,7 @@ fixFieldName s = map f s
 
 writeDataDeclForClass :: M.Map String String -> Class -> [String]
 writeDataDeclForClass domainMap (Class nam _ methods _) =
-    map ("\n\t" ++)  $ map (writeDataDeclForMethod domainMap nam) methods
+    map ("\n    " ++)  $ map (writeDataDeclForMethod domainMap nam) methods
 
 writeDataDeclForMethod :: M.Map String String -> String -> Method -> String
 writeDataDeclForMethod domainMap className (Method nam _ fields) =
@@ -175,7 +175,7 @@ writeDataDeclForMethod domainMap className (Method nam _ fields) =
 
 writeTypeDecl :: M.Map String String -> String -> [Field] -> String
 writeTypeDecl domainMap fullName fields =
-    fullName ++ "\n\t\t" ++ (concat $ L.intersperse "\n\t\t" $ map writeF fields) ++ "\n"
+    fullName ++ "\n        " ++ (concat $ L.intersperse "\n        " $ map writeF fields) ++ "\n"
   where
     writeF (TypeField nam typ) = (translateType typ) ++ " -- " ++ (fixFieldName nam)
     writeF f@(DomainField nam _) = (translateType $ fieldType domainMap f) ++ " -- " ++ (fixFieldName nam)
@@ -190,11 +190,11 @@ writeBinaryGetInstForMethod :: M.Map String String -> String -> Int -> Method ->
 writeBinaryGetInstForMethod domainMap className classIndex (Method nam index fields) =
     let fullName = (fixClassName className) ++ "_" ++ (fixMethodName nam) in
     --binary instances
-    "\t" ++ (writeBinaryGetInstance domainMap fullName classIndex index fields)
+    "    " ++ (writeBinaryGetInstance domainMap fullName classIndex index fields)
 
 writeBinaryGetInstance :: M.Map String String -> String -> Int -> Int -> [Field] -> String
 writeBinaryGetInstance domainMap fullName classIndex methodIndex fields =
-    "\t(" ++ (show classIndex) ++ "," ++ (show methodIndex) ++ ") -> " ++ getDef ++ "\n"
+    "    (" ++ (show classIndex) ++ "," ++ (show methodIndex) ++ ") -> " ++ getDef ++ "\n"
     where
         manyLetters = map (:[]) ['a'..'z']
 
@@ -268,7 +268,7 @@ writeContentHeaderForClass domainMap (Class nam _ _ fields) =
 
 writeContentHeaderDecl :: M.Map String String -> String -> [Field] -> String
 writeContentHeaderDecl domainMap fullName fields =
-    fullName ++ "\n\t\t" ++ (concat $ L.intersperse "\n\t\t" $ map writeF fields) ++ "\n"
+    fullName ++ "\n        " ++ (concat $ L.intersperse "\n        " $ map writeF fields) ++ "\n"
   where
     writeF (TypeField nam typ) = "(Maybe " ++ (translateType typ) ++ ") -- " ++ (fixFieldName nam)
     writeF f@(DomainField nam _) = "(Maybe " ++ (translateType $ fieldType domainMap f) ++ ") -- " ++ (fixFieldName nam)
