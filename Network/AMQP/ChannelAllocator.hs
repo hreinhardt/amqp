@@ -1,3 +1,4 @@
+{-# Language GADTs #-}
 module Network.AMQP.ChannelAllocator where
 
 import qualified Data.Vector.Mutable as V
