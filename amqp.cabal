@@ -40,7 +40,7 @@ Library
      build-depends: network < 2.6
 
   Exposed-modules:    Network.AMQP, Network.AMQP.Types, Network.AMQP.Lifted
-  Other-modules:      Network.AMQP.ChannelAllocator, Network.AMQP.Generated, Network.AMQP.Helpers, Network.AMQP.Protocol, Network.AMQP.Internal
+  Other-modules:      Network.AMQP.ChannelAllocator, Network.AMQP.Generated, Network.AMQP.Helpers, Network.AMQP.Protocol, Network.AMQP.Internal, Paths_amqp
   GHC-Options:        -Wall
 
 Executable amqp-builder

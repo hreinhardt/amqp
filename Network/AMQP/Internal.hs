@@ -1,6 +1,9 @@
 {-# LANGUAGE BangPatterns, CPP, OverloadedStrings, ScopedTypeVariables #-}
 module Network.AMQP.Internal where
 
+import Paths_amqp(version)
+import Data.Version(showVersion)
+
 import Control.Concurrent
 import Control.Monad
 import Data.Binary
@@ -314,10 +317,12 @@ openConnection'' connOpts = withSocketsDo $ do
         in abortIfNothing maybeSasl handle
             ("None of the provided SASL mechanisms "++show clientSaslList++" is supported by the server "++show serverSaslList++".")
 
-    start_ok sasl = (Frame 0 (MethodPayload (Connection_start_ok (FieldTable M.empty)
-        (ShortString $ saslName sasl)
-        (LongString $ saslInitialResponse sasl)
-        (ShortString "en_US")) ))
+    start_ok sasl = (Frame 0 (MethodPayload (Connection_start_ok clientProperties
+                                             (ShortString $ saslName sasl)
+                                             (LongString $ saslInitialResponse sasl)
+                                             (ShortString "en_US")) ))
+                    where clientProperties = FieldTable $ M.fromList [ ("platform", FVString "Haskell")
+                                                                     , ("version" , FVString . T.pack $ showVersion version)]
 
     handleSecureUntilTune handle sasl = do
         tuneOrSecure <- readFrame handle
