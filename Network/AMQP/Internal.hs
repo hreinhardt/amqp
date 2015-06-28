@@ -4,12 +4,16 @@ module Network.AMQP.Internal where
 import Paths_amqp(version)
 import Data.Version(showVersion)
 
+import Control.Applicative
 import Control.Concurrent
+import Control.Concurrent.STM
 import Control.Monad
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put as BPut
 import Data.Int (Int64)
+import Data.IntSet ( (\\) )
+import Data.IORef
 import Data.Maybe
 import Data.Text (Text)
 import Network
@@ -22,6 +26,7 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map as M
 import qualified Data.Foldable as F
 import qualified Data.IntMap as IM
+import qualified Data.IntSet as IntSet
 import qualified Data.Sequence as Seq
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as E
@@ -33,6 +38,7 @@ import Network.AMQP.Helpers
 import Network.AMQP.Generated
 import Network.AMQP.ChannelAllocator
 
+data AckType = BasicAck | BasicNack deriving Show
 
 data DeliveryMode = Persistent -- ^ the message will survive server restarts (if the queue is durable)
                   | NonPersistent -- ^ the message may be lost after server restarts
@@ -468,10 +474,16 @@ data Channel = Channel {
                     channelID :: Word16,
                     lastConsumerTag :: MVar Int,
 
+                    nextPublishSeqNum :: IORef Int,
+                    unconfirmedSet :: TVar IntSet.IntSet,
+                    ackedSet :: TVar IntSet.IntSet,  --delivery tags
+                    nackedSet :: TVar IntSet.IntSet, --accumulate here.
+
                     chanActive :: Lock, -- used for flow-control. if lock is closed, no content methods will be sent
                     chanClosed :: MVar (Maybe String),
                     consumers :: MVar (M.Map Text ((Message, Envelope) -> IO ())), -- who is consumer of a queue? (consumerTag => callback)
                     returnListeners :: MVar ([(Message, PublishError) -> IO ()]),
+                    confirmListeners :: MVar ([(Word64, Bool, AckType) -> IO ()]),
                     chanExceptionHandlers :: MVar [CE.SomeException -> IO ()]
                 }
 
@@ -516,6 +528,8 @@ channelReceiver chan = do
     isResponse (ContentMethod (Basic_return _ _ _ _) _ _) = False
     isResponse (SimpleMethod (Channel_flow _)) = False
     isResponse (SimpleMethod (Channel_close _ _ _ _)) = False
+    isResponse (SimpleMethod (Basic_ack _ _)) = False
+    isResponse (SimpleMethod (Basic_nack _ _ _)) = False
     isResponse _ = True
 
     --Basic.Deliver: forward msg to registered consumer
@@ -551,7 +565,30 @@ channelReceiver chan = do
         withMVar (returnListeners chan) $ \listeners ->
             forM_ listeners $ \l -> CE.catch (l (msg, pubError)) $ \(ex :: CE.SomeException) ->
                 hPutStrLn stderr $ "return listener on channel ["++(show $ channelID chan)++"] handling error ["++show pubError++"] threw exception: "++show ex
+    handleAsync (SimpleMethod (Basic_ack deliveryTag multiple)) = handleConfirm deliveryTag multiple BasicAck
+    handleAsync (SimpleMethod (Basic_nack deliveryTag multiple _)) = handleConfirm deliveryTag multiple BasicNack
     handleAsync m = error ("Unknown method: " ++ show m)
+
+    handleConfirm deliveryTag multiple k = do
+        withMVar (confirmListeners chan) $ \listeners ->
+            forM_ listeners $ \l -> CE.catch (l (deliveryTag, multiple, k)) $ \(ex :: CE.SomeException) ->
+                hPutStrLn stderr $ "confirm listener on channel ["++(show $ channelID chan)++"] handling method "++(show k)++" threw exception: "++ show ex
+
+        let seqNum = fromIntegral deliveryTag
+        let targetSet = case k of
+              BasicAck  -> (ackedSet chan)
+              BasicNack -> (nackedSet chan)
+        atomically $ do
+          unconfSet <- readTVar (unconfirmedSet chan)
+          let (merge, pending) = if multiple
+                                     then (IntSet.union confs, pending')
+                                     else (IntSet.insert seqNum, IntSet.delete seqNum unconfSet)
+                                  where
+                                    confs = fst parts
+                                    pending' = snd parts
+                                    parts = IntSet.partition (\n -> n <= seqNum) unconfSet
+          modifyTVar' targetSet (\ts -> merge ts)
+          writeTVar (unconfirmedSet chan) pending
 
     basicReturnToPublishError (Basic_return code (ShortString errText) (ShortString exchange) (ShortString routingKey)) =
         let replyError = case code of
@@ -604,13 +641,18 @@ openChannel c = do
     ca <- newLock
     closed <- newMVar Nothing
     conss <- newMVar M.empty
-    listeners <- newMVar []
+    retListeners <- newMVar []
+    aSet <- newTVarIO IntSet.empty
+    nSet <- newTVarIO IntSet.empty
+    nxtSeq <- newIORef 0
+    unconfSet <- newTVarIO IntSet.empty
+    cnfListeners <- newMVar []
     handlers <- newMVar []
 
     --add new channel to connection's channel map
     newChannel <- modifyMVar (connChannels c) $ \mp -> do
         newChannelID <- allocateChannel (connChanAllocator c)
-        let newChannel = Channel c newInQueue outRes (fromIntegral newChannelID) lastConsTag ca closed conss listeners handlers
+        let newChannel = Channel c newInQueue outRes (fromIntegral newChannelID) lastConsTag nxtSeq unconfSet aSet nSet ca closed conss retListeners cnfListeners handlers
         thrID <- forkFinally' (channelReceiver newChannel) $ \res -> do
                    closeChannel' newChannel "closed"
                    case res of
@@ -719,3 +761,11 @@ throwMostRelevantAMQPException chan = do
             case chc of
                 Just r -> CE.throwIO $ ChannelClosedException r
                 Nothing -> CE.throwIO $ ConnectionClosedException "unknown reason"
+
+waitForAllConfirms :: Channel -> STM (IntSet.IntSet, IntSet.IntSet)
+waitForAllConfirms chan = do
+  pending <- readTVar $ (unconfirmedSet chan)
+  check (IntSet.null pending)
+  return =<< (,)
+    <$> swapTVar (ackedSet chan) IntSet.empty
+    <*> swapTVar (nackedSet chan) IntSet.empty

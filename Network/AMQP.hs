@@ -113,6 +113,13 @@ module Network.AMQP (
     txCommit,
     txRollback,
 
+    -- * Confirms
+    confirmSelect,
+    waitForConfirms,
+    waitForConfirmsUntil,
+    addConfirmationListener,
+    ConfirmationResult(..),
+
     -- * Flow Control
     flow,
 
@@ -129,7 +136,12 @@ module Network.AMQP (
     fromURI
 ) where
 
+import Control.Applicative
 import Control.Concurrent
+import Control.Concurrent.STM
+import Control.Monad(when)
+import Data.IntSet()
+import Data.IORef
 import Data.List.Split (splitOn)
 import Data.Binary
 import Data.Binary.Put
@@ -139,6 +151,7 @@ import Data.Text (Text)
 
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString as BS
+import qualified Data.IntSet as IntSet
 import qualified Data.Text.Encoding as E
 import qualified Data.Map as M
 import qualified Data.Text as T
@@ -413,7 +426,10 @@ publishMsg' chan exchange routingKey mandatory msg = do
             (fmap ShortString $ msgClusterID msg)
             )
             (msgBody msg))
-    return ()
+    nxtSeqNum <- readIORef (nextPublishSeqNum chan)
+    when (nxtSeqNum /= 0) $ do
+      writeIORef (nextPublishSeqNum chan) $ succ nxtSeqNum
+      atomically $ modifyTVar' (unconfirmedSet chan) $ \uSet -> IntSet.insert nxtSeqNum uSet
 
 -- | @getMsg chan ack queue@ gets a message from the specified queue. If @ack=='Ack'@, you have to call 'ackMsg' or 'ackEnv' for any message that you get, otherwise it might be delivered again in the future (by calling 'recoverMsgs')
 getMsg :: Channel -> Ack -> Text -> IO (Maybe (Message, Envelope))
@@ -491,6 +507,61 @@ txRollback :: Channel -> IO ()
 txRollback chan = do
     (SimpleMethod Tx_rollback_ok) <- request chan $ SimpleMethod Tx_rollback
     return ()
+
+
+-------------------- PUBLISHER CONFIRMS ------------------------
+
+{- | @confirmSelect chan nowait@ puts the channel in publisher confirm mode. This mode is a RabbitMQ
+    extension where a producer receives confirmations when messages are successfully processed by
+    the broker. Publisher confirms are a relatively lightweight alternative to full transactional
+    mode. For details about the delivery guarantees and performace implications of this mode, see
+    https://www.rabbitmq.com/confirms.html. Note that on a single channel, publisher confirms and
+    transactions are mutually exclusive (you cannot select both at the same time).
+    When @nowait==True@ the server will not send back a response to this method.
+-}
+confirmSelect :: Channel -> Bool -> IO ()
+confirmSelect chan nowait = do
+    _ <- modifyIORef' (nextPublishSeqNum chan) $ \seqn -> if seqn == 0 then 1 else seqn
+    if nowait
+        then writeAssembly chan $ SimpleMethod (Confirm_select True)
+        else do
+            (SimpleMethod Confirm_select_ok) <- request chan $ SimpleMethod (Confirm_select False)
+            return ()
+
+{- | Calling this function will cause the invoking thread to block until all previously published
+messages have been acknowledged by the broker (positively or negatively). Returns a value of type
+@ConfirmationResult, holding a tuple of two @IntSet's @(acked, nacked), ontaining the delivery tags
+for the messages that have been confirmed by the broker.
+-}
+waitForConfirms :: Channel -> IO ConfirmationResult
+waitForConfirms chan = atomically $ Complete <$> waitForAllConfirms chan
+
+{- | Same as @waitForConfirms, but with a timeout in microseconds. Note that, since this operation
+may timeout before the server has acked or nacked all pending messages, the returned @ConfirmationResult
+should be pattern-matched for the constructors @Complete (acked, nacked) and @Partial (acked, nacked, pending)
+-}
+waitForConfirmsUntil :: Channel -> Int -> IO ConfirmationResult
+waitForConfirmsUntil chan timeout = do
+  delay <- registerDelay timeout
+  let partial = do
+        expired <- readTVar delay
+        if expired
+           then return . Partial =<< (,,)
+                <$> swapTVar (ackedSet chan) IntSet.empty
+                <*> swapTVar (nackedSet chan) IntSet.empty
+                <*> readTVar (unconfirmedSet chan)
+           else retry
+      complete = return . Complete =<< waitForAllConfirms chan
+  atomically $ complete `orElse` partial
+
+{- | Adds a handler which will be invoked each time the @Channel receives a confirmation from the broker.
+--The parameters passed to the the handler are the @deliveryTag for the message being confirmed, a flag
+indicating whether the confirmation refers to this message individually (@False) or all messages up to
+this one (@True) and an @AckType whose value can be either @BasicAck or @BasicNack.
+-}
+addConfirmationListener :: Channel -> ((Word64, Bool, AckType) -> IO ()) -> IO ()
+addConfirmationListener chan handler =
+    modifyMVar_ (confirmListeners chan) $ \listeners -> return $ handler:listeners
 
 --------------------- FLOW CONTROL ------------------------
 

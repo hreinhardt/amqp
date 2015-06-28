@@ -17,11 +17,13 @@ module Network.AMQP.Types (
     FieldTable(..),
     FieldValue(..),
     Decimals,
-    DecimalValue(..)
+    DecimalValue(..),
+    ConfirmationResult(..),
 ) where
 
 import Control.Applicative
 import Data.Int
+import Data.IntSet (IntSet)
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.IEEE754
@@ -209,3 +211,5 @@ instance Binary DecimalValue where
     put (DecimalValue a b) = put a >> put b
 
 type Decimals = Octet
+
+data ConfirmationResult = Complete (IntSet, IntSet) | Partial (IntSet, IntSet, IntSet) deriving Show
