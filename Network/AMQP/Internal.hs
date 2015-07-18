@@ -12,7 +12,6 @@ import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put as BPut
 import Data.Int (Int64)
-import Data.IntSet ( (\\) )
 import Data.IORef
 import Data.Maybe
 import Data.Text (Text)
@@ -368,13 +367,13 @@ watchHeartbeats conn timeout connThread = scheduleAtFixedRate rate $ do
 
     skippedBeatEx = ConnectionClosedException "killed connection after missing 2 consecutive heartbeats"
 
-    checkReceiveTimeout = check (connLastReceived conn) receiveTimeout
+    checkReceiveTimeout = doCheck (connLastReceived conn) receiveTimeout
         (killConnection conn (CE.toException skippedBeatEx) connThread)
 
-    checkSendTimeout = check (connLastSent conn) sendTimeout
+    checkSendTimeout = doCheck (connLastSent conn) sendTimeout
         (writeFrame (connHandle conn) (Frame 0 HeartbeatPayload))
 
-    check var timeout_µs action = withMVar var $ \lastFrameTime -> do
+    doCheck var timeout_µs action = withMVar var $ \lastFrameTime -> do
         time <- getTimestamp
         when (time >= lastFrameTime + timeout_µs) $ do
             action

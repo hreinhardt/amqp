@@ -140,7 +140,6 @@ import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad(when)
-import Data.IntSet()
 import Data.IORef
 import Data.List.Split (splitOn)
 import Data.Binary
