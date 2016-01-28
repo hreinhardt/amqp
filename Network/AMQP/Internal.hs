@@ -308,7 +308,6 @@ openConnection'' connOpts = withSocketsDo $ do
                               })
         either
             (\(ex :: CE.SomeException) -> do
-                hPutStrLn stderr $ "Error connecting to "++show (host, port)++": "++show ex
                 connect rest)
             (return)
             result
