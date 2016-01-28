@@ -15,7 +15,8 @@ Homepage:            https://github.com/hreinhardt/amqp
 bug-reports:         https://github.com/hreinhardt/amqp/issues
 Cabal-Version:       >=1.8
 Extra-source-files:  examples/ExampleConsumer.hs,
-                     examples/ExampleProducer.hs
+                     examples/ExampleProducer.hs,
+                     changelog.md
 
 flag network-uri
    description: Get Network.URI from the network-uri package
