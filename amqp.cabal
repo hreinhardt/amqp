@@ -2,8 +2,6 @@ Name:                amqp
 Version:             0.13.1
 Synopsis:            Client library for AMQP servers (currently only RabbitMQ)
 Description:         Client library for AMQP servers (currently only RabbitMQ)
-                     .
-                     Changelog: <https://github.com/hreinhardt/amqp/blob/master/README.md>
 License:             BSD3
 Stability:           alpha
 License-file:        LICENSE
