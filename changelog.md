@@ -1,3 +1,7 @@
+### Version 0.13.1
+
+* don't print to stderr when `openConnection` fails to connect to a broker
+
 ### Version 0.13.0
 
 * support for [RabbitMQ publisher confirms](http://www.rabbitmq.com/confirms.html)
