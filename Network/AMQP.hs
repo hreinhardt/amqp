@@ -394,12 +394,14 @@ cancelConsumer chan consumerTag = do
 
 -- | @publishMsg chan exchange routingKey msg@ publishes @msg@ to the exchange with the provided @exchange@. The effect of @routingKey@ depends on the type of the exchange.
 --
+-- Returns the sequence-number of the message (only if the channel is in publisher confirm mode; see 'confirmSelect').
+--
 -- NOTE: This method may temporarily block if the AMQP server requested us to stop sending content data (using the flow control mechanism). So don't rely on this method returning immediately.
-publishMsg :: Channel -> Text -> Text -> Message -> IO ()
+publishMsg :: Channel -> Text -> Text -> Message -> IO (Maybe Int)
 publishMsg chan exchange routingKey msg = publishMsg' chan exchange routingKey False msg
 
 -- | Like 'publishMsg', but additionally allows you to specify whether the 'mandatory' flag should be set.
-publishMsg' :: Channel -> Text -> Text -> Bool -> Message -> IO ()
+publishMsg' :: Channel -> Text -> Text -> Bool -> Message -> IO (Maybe Int)
 publishMsg' chan exchange routingKey mandatory msg = do
     writeAssembly chan (ContentMethod (Basic_publish
             1 -- ticket; ignored by rabbitMQ
@@ -429,6 +431,7 @@ publishMsg' chan exchange routingKey mandatory msg = do
     when (nxtSeqNum /= 0) $ do
       writeIORef (nextPublishSeqNum chan) $ succ nxtSeqNum
       atomically $ modifyTVar' (unconfirmedSet chan) $ \uSet -> IntSet.insert nxtSeqNum uSet
+    return $ if nxtSeqNum /= 0 then Just nxtSeqNum else Nothing
 
 -- | @getMsg chan ack queue@ gets a message from the specified queue. If @ack=='Ack'@, you have to call 'ackMsg' or 'ackEnv' for any message that you get, otherwise it might be delivered again in the future (by calling 'recoverMsgs')
 getMsg :: Channel -> Ack -> Text -> IO (Maybe (Message, Envelope))
