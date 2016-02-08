@@ -529,15 +529,15 @@ confirmSelect chan nowait = do
 
 {- | Calling this function will cause the invoking thread to block until all previously published
 messages have been acknowledged by the broker (positively or negatively). Returns a value of type
-@ConfirmationResult, holding a tuple of two @IntSet's @(acked, nacked), ontaining the delivery tags
+'ConfirmationResult', holding a tuple of two IntSets @(acked, nacked)@, ontaining the delivery tags
 for the messages that have been confirmed by the broker.
 -}
 waitForConfirms :: Channel -> IO ConfirmationResult
 waitForConfirms chan = atomically $ Complete <$> waitForAllConfirms chan
 
-{- | Same as @waitForConfirms, but with a timeout in microseconds. Note that, since this operation
-may timeout before the server has acked or nacked all pending messages, the returned @ConfirmationResult
-should be pattern-matched for the constructors @Complete (acked, nacked) and @Partial (acked, nacked, pending)
+{- | Same as 'waitForConfirms', but with a timeout in microseconds. Note that, since this operation
+may timeout before the server has acked or nacked all pending messages, the returned 'ConfirmationResult'
+should be pattern-matched for the constructors @Complete (acked, nacked)@ and @Partial (acked, nacked, pending)@
 -}
 waitForConfirmsUntil :: Channel -> Int -> IO ConfirmationResult
 waitForConfirmsUntil chan timeout = do
@@ -553,10 +553,10 @@ waitForConfirmsUntil chan timeout = do
       complete = return . Complete =<< waitForAllConfirms chan
   atomically $ complete `orElse` partial
 
-{- | Adds a handler which will be invoked each time the @Channel receives a confirmation from the broker.
---The parameters passed to the the handler are the @deliveryTag for the message being confirmed, a flag
-indicating whether the confirmation refers to this message individually (@False) or all messages up to
-this one (@True) and an @AckType whose value can be either @BasicAck or @BasicNack.
+{- | Adds a handler which will be invoked each time the @Channel@ receives a confirmation from the broker.
+The parameters passed to the the handler are the @deliveryTag@ for the message being confirmed, a flag
+indicating whether the confirmation refers to this message individually (@False@) or all messages up to
+this one (@True@) and an @AckType@ whose value can be either @BasicAck@ or @BasicNack@.
 -}
 addConfirmationListener :: Channel -> ((Word64, Bool, AckType) -> IO ()) -> IO ()
 addConfirmationListener chan handler =
