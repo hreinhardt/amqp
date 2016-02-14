@@ -140,7 +140,6 @@ import Control.Applicative
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad(when)
-import Data.IORef
 import Data.List.Split (splitOn)
 import Data.Binary
 import Data.Binary.Put
@@ -403,7 +402,8 @@ publishMsg chan exchange routingKey msg = publishMsg' chan exchange routingKey F
 -- | Like 'publishMsg', but additionally allows you to specify whether the 'mandatory' flag should be set.
 publishMsg' :: Channel -> Text -> Text -> Bool -> Message -> IO (Maybe Int)
 publishMsg' chan exchange routingKey mandatory msg = do
-    writeAssembly chan (ContentMethod (Basic_publish
+    modifyMVar (nextPublishSeqNum chan) $ \nxtSeqNum -> do
+        writeAssembly chan (ContentMethod (Basic_publish
             1 -- ticket; ignored by rabbitMQ
             (ShortString exchange)
             (ShortString routingKey)
@@ -414,7 +414,7 @@ publishMsg' chan exchange routingKey mandatory msg = do
             (fmap ShortString $ msgContentType msg)
             (fmap ShortString $ msgContentEncoding msg)
             (msgHeaders msg)
-            (fmap deliveryModeToInt $ msgDeliveryMode msg) -- delivery_mode
+            (fmap deliveryModeToInt $ msgDeliveryMode msg)
             (msgPriority msg)
             (fmap ShortString $ msgCorrelationID msg)
             (fmap ShortString $ msgReplyTo msg)
@@ -427,11 +427,12 @@ publishMsg' chan exchange routingKey mandatory msg = do
             (fmap ShortString $ msgClusterID msg)
             )
             (msgBody msg))
-    nxtSeqNum <- readIORef (nextPublishSeqNum chan)
-    when (nxtSeqNum /= 0) $ do
-      writeIORef (nextPublishSeqNum chan) $ succ nxtSeqNum
-      atomically $ modifyTVar' (unconfirmedSet chan) $ \uSet -> IntSet.insert nxtSeqNum uSet
-    return $ if nxtSeqNum /= 0 then Just nxtSeqNum else Nothing
+
+        if nxtSeqNum /= 0
+            then do
+                atomically $ modifyTVar' (unconfirmedSet chan) $ \uSet -> IntSet.insert nxtSeqNum uSet
+                return (succ nxtSeqNum, Just nxtSeqNum)
+           else return (0, Nothing)
 
 -- | @getMsg chan ack queue@ gets a message from the specified queue. If @ack=='Ack'@, you have to call 'ackMsg' or 'ackEnv' for any message that you get, otherwise it might be delivered again in the future (by calling 'recoverMsgs')
 getMsg :: Channel -> Ack -> Text -> IO (Maybe (Message, Envelope))
@@ -523,7 +524,7 @@ txRollback chan = do
 -}
 confirmSelect :: Channel -> Bool -> IO ()
 confirmSelect chan nowait = do
-    _ <- modifyIORef' (nextPublishSeqNum chan) $ \seqn -> if seqn == 0 then 1 else seqn
+    modifyMVar_ (nextPublishSeqNum chan) $ \seqn -> return $ if seqn == 0 then 1 else seqn
     if nowait
         then writeAssembly chan $ SimpleMethod (Confirm_select True)
         else do

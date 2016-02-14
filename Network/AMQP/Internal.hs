@@ -12,7 +12,6 @@ import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put as BPut
 import Data.Int (Int64)
-import Data.IORef
 import Data.Maybe
 import Data.Text (Text)
 import Network
@@ -472,7 +471,7 @@ data Channel = Channel {
                     channelID :: Word16,
                     lastConsumerTag :: MVar Int,
 
-                    nextPublishSeqNum :: IORef Int,
+                    nextPublishSeqNum :: MVar Int,
                     unconfirmedSet :: TVar IntSet.IntSet,
                     ackedSet :: TVar IntSet.IntSet,  --delivery tags
                     nackedSet :: TVar IntSet.IntSet, --accumulate here.
@@ -642,7 +641,7 @@ openChannel c = do
     retListeners <- newMVar []
     aSet <- newTVarIO IntSet.empty
     nSet <- newTVarIO IntSet.empty
-    nxtSeq <- newIORef 0
+    nxtSeq <- newMVar 0
     unconfSet <- newTVarIO IntSet.empty
     cnfListeners <- newMVar []
     handlers <- newMVar []
