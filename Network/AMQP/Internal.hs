@@ -168,12 +168,14 @@ data ConnectionOpts = ConnectionOpts {
 data TLSSettings =
     TLSTrusted   -- ^ Require trusted certificates (Recommended).
   | TLSUntrusted -- ^ Allow untrusted certificates (Discouraged. Vulnerable to man-in-the-middle attacks)
+  | TLSCustom Conn.TLSSettings -- ^ Provide your own custom TLS settings
 
 connectionTLSSettings :: TLSSettings -> Maybe Conn.TLSSettings
 connectionTLSSettings tlsSettings =
   Just $ case tlsSettings of
     TLSTrusted -> Conn.TLSSettingsSimple False False False
     TLSUntrusted -> Conn.TLSSettingsSimple True False False
+    TLSCustom x -> x
 
 -- | A 'SASLMechanism' is described by its name ('saslName'), its initial response ('saslInitialResponse'), and an optional function ('saslChallengeFunc') that
 -- transforms a security challenge provided by the server into response, which is then sent back to the server for verification.
