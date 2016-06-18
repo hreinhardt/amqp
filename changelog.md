@@ -1,3 +1,8 @@
+### Version 0.14.0
+
+* publishMsg now returns the message sequence-number
+* new `TLSCustom` field in `TLSSettings`
+
 ### Version 0.13.1
 
 * don't print to stderr when `openConnection` fails to connect to a broker
