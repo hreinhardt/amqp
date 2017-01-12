@@ -1,3 +1,7 @@
+### Version 0.14.1
+
+* show all exceptions if no host can be connected to
+
 ### Version 0.14.0
 
 * publishMsg now returns the message sequence-number
@@ -71,7 +75,7 @@
 
 ### Version 0.4.3
 
-* use Handles instead of sockets 
+* use Handles instead of sockets
 * fix deprecation warnings from Data.Binary
 
 ### Version 0.4.2
