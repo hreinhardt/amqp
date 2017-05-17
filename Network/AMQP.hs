@@ -131,6 +131,7 @@ module Network.AMQP (
 
     -- * Exceptions
     AMQPException(..),
+    ChanThreadKilledException,
 
     -- * URI parsing
     fromURI

@@ -278,7 +278,7 @@ openConnection'' connOpts = withSocketsDo $ do
                 -- connection: if the thread died for an unexpected exception,
                 -- inform the channel threads downstream accordingly. Otherwise
                 -- just use a normal 'killThread' finaliser.
-                let finaliser = case res of
+                let finaliser = ChanThreadKilledException $ case res of
                         Left ex -> ex
                         Right _ -> CE.toException CE.ThreadKilled
                 modifyMVar_ cChannels $ \x -> do
@@ -486,6 +486,16 @@ data Channel = Channel {
                     chanExceptionHandlers :: MVar [CE.SomeException -> IO ()]
                 }
 
+-- Thrown in the channel thread when the connection gets closed.
+-- When handling exceptions in a subscription callback, make sure to re-throw this so the channel thread can be stopped.
+data ChanThreadKilledException = ChanThreadKilledException { cause :: CE.SomeException }
+  deriving (Show)
+
+instance CE.Exception ChanThreadKilledException
+
+unwrapChanThreadKilledException :: CE.SomeException -> CE.SomeException
+unwrapChanThreadKilledException e = maybe e cause $ CE.fromException e
+
 msgFromContentHeaderProperties :: ContentHeaderProperties -> BL.ByteString -> Message
 msgFromContentHeaderProperties (CHBasic content_type content_encoding headers delivery_mode priority correlation_id reply_to expiration message_id timestamp message_type user_id application_id cluster_id) body =
     let msgId = fromShortString message_id
@@ -542,8 +552,11 @@ channelReceiver chan = do
                     let env = Envelope {envDeliveryTag = deliveryTag, envRedelivered = redelivered,
                                     envExchangeName = exchange, envRoutingKey = routingKey, envChannel = chan}
 
-                    CE.catch (subscriber (msg, env))
-                        (\(e::CE.SomeException) -> hPutStrLn stderr $ "AMQP callback threw exception: " ++ show e)
+                    CE.catches (subscriber (msg, env))
+                        [
+                          CE.Handler (\(e::ChanThreadKilledException) -> CE.throwIO $ cause e),
+                          CE.Handler (\(e::CE.SomeException) -> hPutStrLn stderr $ "AMQP callback threw exception: " ++ show e)
+                        ]
                 Nothing ->
                     -- got a message, but have no registered subscriber; so drop it
                     return ()
@@ -656,7 +669,7 @@ openChannel c = do
                    closeChannel' newChannel "closed"
                    case res of
                      Right _ -> return ()
-                     Left ex -> readMVar handlers >>= mapM_ ($ ex)
+                     Left ex -> readMVar handlers >>= mapM_ ($ unwrapChanThreadKilledException ex)
         when (IM.member newChannelID mp) $ CE.throwIO $ userError "openChannel fail: channel already open"
         return (IM.insert newChannelID (newChannel, thrID) mp, newChannel)
 
