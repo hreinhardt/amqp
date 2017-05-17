@@ -486,7 +486,7 @@ data Channel = Channel {
                     chanExceptionHandlers :: MVar [CE.SomeException -> IO ()]
                 }
 
--- Thrown in the channel thread when the connection gets closed.
+-- | Thrown in the channel thread when the connection gets closed.
 -- When handling exceptions in a subscription callback, make sure to re-throw this so the channel thread can be stopped.
 data ChanThreadKilledException = ChanThreadKilledException { cause :: CE.SomeException }
   deriving (Show)
