@@ -100,7 +100,7 @@ spec = do
                 cMap' `shouldBe` Map.empty
 
                 counter' <- atomically $ readTVar counter
-                counter' `shouldSatisfy` (>0)
+                counter' `shouldBe` 5
 
                 _ <- deleteQueue ch q
                 closeConnection conn
@@ -120,11 +120,10 @@ handleConfirms c _ (_, False, BasicNack) = atomically $ increaseCounter c
 handleConfirms c _ (_, True, BasicNack) = atomically $ increaseCounter c
 handleConfirms c cMap (n, False, BasicAck) = atomically $ removeSequenceNumber cMap n >> increaseCounter c
 handleConfirms c cMap (n, True, BasicAck) = atomically $ do
-  increaseCounter c
   cMap' <- readTVar cMap
   let (lt, eq', _) = Map.splitLookup n cMap'
   case eq' of
-    Just _ -> removeSequenceNumber cMap n
+    Just _ -> removeSequenceNumber cMap n >> increaseCounter c
     Nothing -> return ()
-  _ <- traverse (removeSequenceNumber cMap) (Map.keys lt)
+  _ <- traverse (\i -> removeSequenceNumber cMap i >> increaseCounter c) (Map.keys lt)
   return ()
