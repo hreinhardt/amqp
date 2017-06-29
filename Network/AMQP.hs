@@ -119,7 +119,8 @@ module Network.AMQP (
     waitForConfirmsUntil,
     addConfirmationListener,
     ConfirmationResult(..),
-
+    AckType(..),
+    
     -- * Flow Control
     flow,
 
