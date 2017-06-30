@@ -1,3 +1,7 @@
+### Version 0.15.1
+
+* export the `AckType` data-type and constructors
+
 ### Version 0.15.0
 
 * The way channels are closed internally was changed. This may affect you if you have installed an exception handler inside the callback passed to `consumeMsgs`. Specifically, the exceptions used internally to close channels are now wrapped inside `ChanThreadKilledException`. You should make sure to re-throw this exception if you did catch it.
