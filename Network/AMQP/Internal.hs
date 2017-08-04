@@ -163,7 +163,7 @@ data ConnectionOpts = ConnectionOpts {
                             coHeartbeatDelay :: !(Maybe Word16), -- ^ The delay in seconds, after which the client expects a heartbeat frame from the broker. If 'Nothing', the value suggested by the broker is used. Use @Just 0@ to disable the heartbeat mechnism.
                             coMaxChannel :: !(Maybe Word16), -- ^ The maximum number of channels the client will use.
                             coTLSSettings :: Maybe TLSSettings, -- ^ Whether or not to connect to servers using TLS. See http://www.rabbitmq.com/ssl.html for details.
-                            coName :: !(Maybe Text) -- ^ The connection name (optional).
+                            coName :: !(Maybe Text) -- ^ optional connection name (will be displayed in the RabbitMQ web interface)
                         }
 -- | Represents the kind of TLS connection to establish.
 data TLSSettings =
