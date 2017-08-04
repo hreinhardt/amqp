@@ -162,7 +162,8 @@ data ConnectionOpts = ConnectionOpts {
                             coMaxFrameSize :: !(Maybe Word32), -- ^ The maximum frame size to be used. If not specified, no limit is assumed.
                             coHeartbeatDelay :: !(Maybe Word16), -- ^ The delay in seconds, after which the client expects a heartbeat frame from the broker. If 'Nothing', the value suggested by the broker is used. Use @Just 0@ to disable the heartbeat mechnism.
                             coMaxChannel :: !(Maybe Word16), -- ^ The maximum number of channels the client will use.
-                            coTLSSettings :: Maybe TLSSettings -- ^ Whether or not to connect to servers using TLS. See http://www.rabbitmq.com/ssl.html for details.
+                            coTLSSettings :: Maybe TLSSettings, -- ^ Whether or not to connect to servers using TLS. See http://www.rabbitmq.com/ssl.html for details.
+                            coName :: !(Maybe Text) -- ^ The connection name (optional).
                         }
 -- | Represents the kind of TLS connection to establish.
 data TLSSettings =
@@ -230,7 +231,7 @@ openConnection'' connOpts = withSocketsDo $ do
         selectedSASL <- selectSASLMechanism handle serverMechanisms
 
         -- C: start_ok
-        writeFrame handle $ start_ok selectedSASL
+        writeFrame handle $ start_ok selectedSASL (coName connOpts)
         -- S: secure or tune
         Frame 0 (MethodPayload (Connection_tune channel_max frame_max sendHeartbeat)) <- handleSecureUntilTune handle selectedSASL
         -- C: tune_ok
@@ -322,12 +323,13 @@ openConnection'' connOpts = withSocketsDo $ do
         in abortIfNothing maybeSasl handle
             ("None of the provided SASL mechanisms "++show clientSaslList++" is supported by the server "++show serverSaslList++".")
 
-    start_ok sasl = (Frame 0 (MethodPayload (Connection_start_ok clientProperties
-                                             (ShortString $ saslName sasl)
-                                             (LongString $ saslInitialResponse sasl)
-                                             (ShortString "en_US")) ))
-                    where clientProperties = FieldTable $ M.fromList [ ("platform", FVString "Haskell")
-                                                                     , ("version" , FVString . T.pack $ showVersion version)]
+    start_ok sasl mname = (Frame 0 (MethodPayload (Connection_start_ok clientProperties
+                                                   (ShortString $ saslName sasl)
+                                                   (LongString $ saslInitialResponse sasl)
+                                                   (ShortString "en_US")) ))
+                          where clientProperties = FieldTable $ M.fromList $ [ ("platform", FVString "Haskell")
+                                                                             , ("version" , FVString . T.pack $ showVersion version)
+                                                                             ] ++ maybe [] (\x -> [("connection_name", FVString x)]) mname
 
     handleSecureUntilTune handle sasl = do
         tuneOrSecure <- readFrame handle
