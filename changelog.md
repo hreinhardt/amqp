@@ -1,3 +1,7 @@
+### Version 0.16.0
+
+* new `coName` field in `ConnectionOpts` to specify a custom name that will be displayed in the RabbitMQ web interface
+
 ### Version 0.15.1
 
 * export the `AckType` data-type and constructors
