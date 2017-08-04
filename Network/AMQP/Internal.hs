@@ -231,7 +231,7 @@ openConnection'' connOpts = withSocketsDo $ do
         selectedSASL <- selectSASLMechanism handle serverMechanisms
 
         -- C: start_ok
-        writeFrame handle $ start_ok selectedSASL (coName connOpts)
+        writeFrame handle $ start_ok selectedSASL
         -- S: secure or tune
         Frame 0 (MethodPayload (Connection_tune channel_max frame_max sendHeartbeat)) <- handleSecureUntilTune handle selectedSASL
         -- C: tune_ok
@@ -323,13 +323,13 @@ openConnection'' connOpts = withSocketsDo $ do
         in abortIfNothing maybeSasl handle
             ("None of the provided SASL mechanisms "++show clientSaslList++" is supported by the server "++show serverSaslList++".")
 
-    start_ok sasl mname = (Frame 0 (MethodPayload (Connection_start_ok clientProperties
-                                                   (ShortString $ saslName sasl)
-                                                   (LongString $ saslInitialResponse sasl)
-                                                   (ShortString "en_US")) ))
-                          where clientProperties = FieldTable $ M.fromList $ [ ("platform", FVString "Haskell")
-                                                                             , ("version" , FVString . T.pack $ showVersion version)
-                                                                             ] ++ maybe [] (\x -> [("connection_name", FVString x)]) mname
+    start_ok sasl = (Frame 0 (MethodPayload (Connection_start_ok clientProperties
+                                             (ShortString $ saslName sasl)
+                                             (LongString $ saslInitialResponse sasl)
+                                             (ShortString "en_US")) ))
+                    where clientProperties = FieldTable $ M.fromList $ [ ("platform", FVString "Haskell")
+                                                                       , ("version" , FVString . T.pack $ showVersion version)
+                                                                       ] ++ maybe [] (\x -> [("connection_name", FVString x)]) (coName connOpts)
 
     handleSecureUntilTune handle sasl = do
         tuneOrSecure <- readFrame handle
