@@ -5,7 +5,7 @@
 --
 -- A good introduction to RabbitMQ and AMQP 0-9-1 (in various languages): <http://www.rabbitmq.com/getstarted.html>, <http://www.rabbitmq.com/tutorials/amqp-concepts.html>
 --
--- /Example/:
+-- == Example
 --
 -- Connect to a server, declare a queue and an exchange and setup a callback for messages coming in on the queue. Then publish a single message to our new exchange
 --
@@ -41,10 +41,18 @@
 -- >    -- acknowledge receiving the message
 -- >    ackEnv env
 --
--- /Exception handling/:
+-- == Exception handling notes
 --
 -- Some function calls can make the AMQP server throw an AMQP exception, which has the side-effect of closing the connection or channel. The AMQP exceptions are raised as Haskell exceptions (see 'AMQPException'). So upon receiving an 'AMQPException' you may have to reopen the channel or connection.
-
+--
+-- == Debugging tips
+--
+-- If you need to debug a problem with e.g. channels being closed unexpectedly, here are some tips:
+--
+-- - The RabbitMQ log file often has helpful error-messages. The location of the log-file differs by OS. Look for RABBITMQ_LOGS in this page: <https://www.rabbitmq.com/relocate.html>
+-- - The function 'addChannelExceptionHandler' can be used to figure out when and why a channel was closed.
+-- - RabbitMQ has a browser-based management console, which allows you to see connections, channels, queues and more. Setup instructions are here: https://www.rabbitmq.com/management.html
+--
 module Network.AMQP (
     -- * Connection
     Connection,
