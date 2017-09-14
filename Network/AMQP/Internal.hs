@@ -565,7 +565,7 @@ channelReceiver chan = do
             )
     handleAsync (SimpleMethod (Channel_close _ (ShortString errorMsg) _ _)) = do
         closeChannel' chan errorMsg
-        myThreadId >>= flip CE.throwTo (ConnectionClosedException . T.unpack $ errorMsg)
+        myThreadId >>= flip CE.throwTo (ChannelClosedException . T.unpack $ errorMsg)
     handleAsync (SimpleMethod (Channel_flow active)) = do
         if active
             then openLock $ chanActive chan
