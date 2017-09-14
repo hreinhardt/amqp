@@ -1,3 +1,7 @@
+### Version 0.17.0
+
+* When the server asynchronously closed a channel, this was (erroneously) internally represented as a `ConnectionClosedException`. It is now represented as a `ChannelClosedException`. This could affect you if you explicitly match on `ConnectionClosedException` or `ChannelClosedException` in your code, for example when using `addChannelExceptionHandler`.
+
 ### Version 0.16.0
 
 * new `coName` field in `ConnectionOpts` to specify a custom name that will be displayed in the RabbitMQ web interface
