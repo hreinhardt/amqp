@@ -19,6 +19,7 @@ module Network.AMQP.Types (
     Decimals,
     DecimalValue(..),
     ConfirmationResult(..),
+    CloseType(..)
 ) where
 
 import Control.Applicative
@@ -38,11 +39,14 @@ import qualified Data.ByteString.Lazy as BL
 import qualified Data.Map as M
 import qualified Data.Text.Encoding as T
 
+-- | describes whether a channel was closed by user-request (Normal) or by an AMQP exception (Abnormal)
+data CloseType = Normal | Abnormal
+    deriving (Typeable, Show, Ord, Eq)
 
 data AMQPException =
     -- | the 'String' contains the reason why the channel was closed
-    ChannelClosedException String
-    | ConnectionClosedException String -- ^ String may contain a reason
+    ChannelClosedException CloseType String
+    | ConnectionClosedException CloseType String -- ^ String may contain a reason
     | AllChannelsAllocatedException Int -- ^ the 'Int' contains the channel-max property of the connection (i.e. the highest permitted channel id)
   deriving (Typeable, Show, Ord, Eq)
 instance CE.Exception AMQPException

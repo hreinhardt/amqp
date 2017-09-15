@@ -43,8 +43,10 @@ spec = do
              it "empties the queue" $ do
                 conn <- openConnection "127.0.0.1" "/" "guest" "guest"
                 ch   <- openChannel conn
+                -- silence error messages
+                addChannelExceptionHandler ch $ return . const ()
 
-                let ex = ChannelClosedException "NOT_FOUND - no queue 'haskell-amqp.queues.avjqmyG{CHrc66MRyzYVA+PwrMVARJ' in vhost '/'"
+                let ex = ChannelClosedException Abnormal "NOT_FOUND - no queue 'haskell-amqp.queues.avjqmyG{CHrc66MRyzYVA+PwrMVARJ' in vhost '/'"
                 (purgeQueue ch "haskell-amqp.queues.avjqmyG{CHrc66MRyzYVA+PwrMVARJ") `shouldThrow` (== ex)
 
                 closeConnection conn

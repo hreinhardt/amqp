@@ -17,6 +17,9 @@ spec = do
 
                  conn <- openConnection "127.0.0.1" "/" "guest" "guest"
                  ch   <- openChannel conn
+                 -- silence error messages
+                 addChannelExceptionHandler ch $ return . const ()
+
 
                  _    <- declareExchange ch (newExchange {exchangeName    = eName,
                                                           exchangeType    = "topic",
@@ -24,7 +27,7 @@ spec = do
 
                  _    <- deleteExchange ch eName
 
-                 let ex = ChannelClosedException "NOT_FOUND - no exchange 'haskell-amqp.exchanges.to-be-deleted' in vhost '/'"
+                 let ex = ChannelClosedException Abnormal "NOT_FOUND - no exchange 'haskell-amqp.exchanges.to-be-deleted' in vhost '/'"
                  (declareExchange ch $ newExchange {exchangeName = eName, exchangePassive = True}) `shouldThrow` (== ex)
 
                  closeConnection conn
@@ -33,9 +36,11 @@ spec = do
              it "throws an exception" $ do
                  conn <- openConnection "127.0.0.1" "/" "guest" "guest"
                  ch   <- openChannel conn
+                 -- silence error messages
+                 addChannelExceptionHandler ch $ return . const ()
 
                  let q  = "haskell-amqp.exchanges.GmN8rozyXiz2mQYcFrQg"
-                     ex = ChannelClosedException "NOT_FOUND - no exchange 'haskell-amqp.exchanges.GmN8rozyXiz2mQYcFrQg' in vhost '/'"
+                     ex = ChannelClosedException Abnormal "NOT_FOUND - no exchange 'haskell-amqp.exchanges.GmN8rozyXiz2mQYcFrQg' in vhost '/'"
                  (declareExchange ch $ newExchange {exchangeName = q, exchangePassive = True}) `shouldThrow` (== ex)
 
                  closeConnection conn

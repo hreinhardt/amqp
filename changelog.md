@@ -1,3 +1,8 @@
+### Version 0.18.0
+
+* `ConnectionClosedException` and `ChannelClosedException` now specify whether the close was normal (user-initiated) or abnormal (caused by an AMQP exception)
+* channels that are abnormally closed and have no exception handler (set using `addChannelExceptionHandler`) will now print the error to `stderr`
+
 ### Version 0.17.0
 
 * When the server asynchronously closed a channel, this was (erroneously) internally represented as a `ConnectionClosedException`. It is now represented as a `ChannelClosedException`. This could affect you if you explicitly match on `ConnectionClosedException` or `ChannelClosedException` in your code, for example when using `addChannelExceptionHandler`.

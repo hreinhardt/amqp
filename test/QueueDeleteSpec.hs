@@ -15,6 +15,8 @@ spec = do
           it "deletes the queue" $ do
               conn <- openConnection "127.0.0.1" "/" "guest" "guest"
               ch   <- openChannel conn
+              -- silence error messages
+              addChannelExceptionHandler ch $ return . const ()
 
               (q, _, _) <- declareQueue ch (newQueue {queueName      = "haskell-amqp.queues.to-be-deleted",
                                                       queueExclusive = True})
@@ -23,7 +25,7 @@ spec = do
               n <- deleteQueue ch q
               n `shouldBe` 0
 
-              let ex = (ChannelClosedException "NOT_FOUND - no queue 'haskell-amqp.queues.to-be-deleted' in vhost '/'")
+              let ex = (ChannelClosedException Abnormal "NOT_FOUND - no queue 'haskell-amqp.queues.to-be-deleted' in vhost '/'")
               (declareQueue ch $ newQueue {queueName = q, queuePassive = True}) `shouldThrow` (== ex)
 
               closeConnection conn
@@ -32,9 +34,11 @@ spec = do
               it "throws an exception" $ do
                   conn <- openConnection "127.0.0.1" "/" "guest" "guest"
                   ch   <- openChannel conn
+                  -- silence error messages
+                  addChannelExceptionHandler ch $ return . const ()
 
                   let q  = "haskell-amqp.queues.GmN8rozyXiz2mQYcFrQg"
-                      ex = ChannelClosedException "NOT_FOUND - no queue 'haskell-amqp.queues.GmN8rozyXiz2mQYcFrQg' in vhost '/'"
+                      ex = ChannelClosedException Abnormal "NOT_FOUND - no queue 'haskell-amqp.queues.GmN8rozyXiz2mQYcFrQg' in vhost '/'"
                   (declareQueue ch $ newQueue {queueName = q, queuePassive = True}) `shouldThrow` (== ex)
 
                   closeConnection conn

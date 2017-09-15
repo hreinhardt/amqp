@@ -50,8 +50,11 @@ spec = do
                 conn <- openConnection "127.0.0.1" "/" "guest" "guest"
                 ch   <- openChannel conn
 
+                -- silence error messages
+                addChannelExceptionHandler ch $ return . const ()
+
                 let x  = "haskell-amqp.exchanges.Xiz2mQozyYcFrQgGmN8r"
-                    ex = ChannelClosedException "NOT_FOUND - no exchange 'haskell-amqp.exchanges.Xiz2mQozyYcFrQgGmN8r' in vhost '/'"
+                    ex = ChannelClosedException Abnormal "NOT_FOUND - no exchange 'haskell-amqp.exchanges.Xiz2mQozyYcFrQgGmN8r' in vhost '/'"
                 (declareExchange ch $ newExchange {exchangeName = x, exchangePassive = True}) `shouldThrow` (== ex)
 
                 closeConnection conn

@@ -145,7 +145,7 @@ data Connection = Connection {
                     connChanAllocator :: ChannelAllocator,
                     connChannels :: MVar (IM.IntMap (Channel, ThreadId)), -- open channels (channelID => (Channel, ChannelThread))
                     connMaxFrameSize :: Int, --negotiated maximum frame size
-                    connClosed :: MVar (Maybe String),
+                    connClosed :: MVar (Maybe (CloseType, String)),
                     connClosedLock :: MVar (), -- used by closeConnection to block until connection-close handshake is complete
                     connWriteLock :: MVar (), -- to ensure atomic writes to the socket
                     connClosedHandlers :: MVar [IO ()],
@@ -194,16 +194,16 @@ connectionReceiver conn = do
         updateLastReceived conn
         forwardToChannel chanID payload
         )
-        (\(e :: CE.IOException) -> myThreadId >>= killConnection conn (CE.toException e))
+        (\(e :: CE.IOException) -> myThreadId >>= killConnection conn Abnormal (CE.toException e))
     connectionReceiver conn
   where
 
-    closedByUserEx = ConnectionClosedException "closed by user"
+    closedByUserEx = ConnectionClosedException Normal "closed by user"
 
-    forwardToChannel 0 (MethodPayload Connection_close_ok) =  myThreadId >>= killConnection conn (CE.toException closedByUserEx)
+    forwardToChannel 0 (MethodPayload Connection_close_ok) =  myThreadId >>= killConnection conn Normal (CE.toException closedByUserEx)
     forwardToChannel 0 (MethodPayload (Connection_close _ (ShortString errorMsg) _ _)) = do
         writeFrame (connHandle conn) $ Frame 0 $ MethodPayload Connection_close_ok
-        myThreadId >>= killConnection conn (CE.toException . ConnectionClosedException . T.unpack $ errorMsg)
+        myThreadId >>= killConnection conn Abnormal (CE.toException . ConnectionClosedException Abnormal . T.unpack $ errorMsg)
     forwardToChannel 0 HeartbeatPayload = return ()
     forwardToChannel 0 payload = hPutStrLn stderr $ "Got unexpected msg on channel zero: " ++ show payload
     forwardToChannel chanID payload = do
@@ -217,7 +217,7 @@ connectionReceiver conn = do
 openConnection'' :: ConnectionOpts -> IO Connection
 openConnection'' connOpts = withSocketsDo $ do
     handle <- connect [] $ coServers connOpts
-    (maxFrameSize, maxChannel, heartbeatTimeout) <- CE.handle (\(_ :: CE.IOException) -> CE.throwIO $ ConnectionClosedException "Handshake failed. Please check the RabbitMQ logs for more information") $ do
+    (maxFrameSize, maxChannel, heartbeatTimeout) <- CE.handle (\(_ :: CE.IOException) -> CE.throwIO $ ConnectionClosedException Abnormal "Handshake failed. Please check the RabbitMQ logs for more information") $ do
         Conn.connectionPut handle $ BS.append (BC.pack "AMQP")
                 (BS.pack [
                           1
@@ -272,7 +272,7 @@ openConnection'' connOpts = withSocketsDo $ do
                 CE.catch (Conn.connectionClose handle) (\(_ :: CE.SomeException) -> return ())
 
                 -- mark as closed
-                modifyMVar_ cClosed $ return . Just . maybe "unknown reason" id
+                modifyMVar_ cClosed $ return . Just . fromMaybe (Abnormal, "unknown reason")
 
                 -- kill all channel-threads, making sure the channel threads will
                 -- be killed taking into account the overall state of the
@@ -313,7 +313,7 @@ openConnection'' connOpts = withSocketsDo $ do
                 connect (ex:excs) rest)
             (return)
             result
-    connect excs [] = CE.throwIO $ ConnectionClosedException $ "Could not connect to any of the provided brokers: " ++ show (zip (coServers connOpts) (reverse excs))
+    connect excs [] = CE.throwIO $ ConnectionClosedException Abnormal $ "Could not connect to any of the provided brokers: " ++ show (zip (coServers connOpts) (reverse excs))
     tlsSettings = maybe Nothing connectionTLSSettings (coTLSSettings connOpts)
     selectSASLMechanism handle serverMechanisms =
         let serverSaslList = T.split (== ' ') $ E.decodeUtf8 serverMechanisms
@@ -351,7 +351,7 @@ openConnection'' connOpts = withSocketsDo $ do
 
     abortHandshake handle msg = do
         Conn.connectionClose handle
-        CE.throwIO $ ConnectionClosedException msg
+        CE.throwIO $ ConnectionClosedException Abnormal msg
 
     abortIfNothing m handle msg = case m of
         Nothing -> abortHandshake handle msg
@@ -367,10 +367,10 @@ watchHeartbeats conn timeout connThread = scheduleAtFixedRate rate $ do
     receiveTimeout = (fromIntegral rate) * 4 * 2 -- 2*timeout in µs
     sendTimeout = (fromIntegral rate) * 2 -- timeout/2 in µs
 
-    skippedBeatEx = ConnectionClosedException "killed connection after missing 2 consecutive heartbeats"
+    skippedBeatEx = ConnectionClosedException Abnormal "killed connection after missing 2 consecutive heartbeats"
 
     checkReceiveTimeout = doCheck (connLastReceived conn) receiveTimeout
-        (killConnection conn (CE.toException skippedBeatEx) connThread)
+        (killConnection conn Abnormal (CE.toException skippedBeatEx) connThread)
 
     checkSendTimeout = doCheck (connLastSent conn) sendTimeout
         (writeFrame (connHandle conn) (Frame 0 HeartbeatPayload))
@@ -387,9 +387,9 @@ updateLastReceived :: Connection -> IO ()
 updateLastReceived conn = modifyMVar_ (connLastReceived conn) (const getTimestamp)
 
 -- | kill the connection thread abruptly
-killConnection :: Connection -> CE.SomeException -> ThreadId -> IO ()
-killConnection conn ex connThread = do
-    modifyMVar_ (connClosed conn) $ const $ return $ Just (show ex)
+killConnection :: Connection -> CloseType -> CE.SomeException -> ThreadId -> IO ()
+killConnection conn closeType ex connThread = do
+    modifyMVar_ (connClosed conn) $ const $ return $ Just (closeType, show ex)
     throwTo connThread ex
 
 -- | closes a connection
@@ -481,7 +481,7 @@ data Channel = Channel {
                     nackedSet :: TVar IntSet.IntSet, --accumulate here.
 
                     chanActive :: Lock, -- used for flow-control. if lock is closed, no content methods will be sent
-                    chanClosed :: MVar (Maybe String),
+                    chanClosed :: MVar (Maybe (CloseType, String)),
                     consumers :: MVar (M.Map Text ((Message, Envelope) -> IO ())), -- who is consumer of a queue? (consumerTag => callback)
                     returnListeners :: MVar ([(Message, PublishError) -> IO ()]),
                     confirmListeners :: MVar ([(Word64, Bool, AckType) -> IO ()]),
@@ -564,8 +564,8 @@ channelReceiver chan = do
                     return ()
             )
     handleAsync (SimpleMethod (Channel_close _ (ShortString errorMsg) _ _)) = do
-        closeChannel' chan errorMsg
-        myThreadId >>= flip CE.throwTo (ChannelClosedException . T.unpack $ errorMsg)
+        closeChannel' chan Abnormal errorMsg
+        myThreadId >>= flip CE.throwTo (ChannelClosedException Abnormal . T.unpack $ errorMsg)
     handleAsync (SimpleMethod (Channel_flow active)) = do
         if active
             then openLock $ chanActive chan
@@ -625,8 +625,8 @@ addChannelExceptionHandler chan handler = do
     modifyMVar_ (chanExceptionHandlers chan) $ \handlers -> return $ handler:handlers
 
 -- closes the channel internally; but doesn't tell the server
-closeChannel' :: Channel -> Text -> IO ()
-closeChannel' c reason = do
+closeChannel' :: Channel -> CloseType -> Text -> IO ()
+closeChannel' c closeType reason = do
     modifyMVar_ (chanClosed c) $ \x -> do
         if isNothing x
             then do
@@ -637,7 +637,7 @@ closeChannel' c reason = do
 
                 void $ killLock $ chanActive c
                 killOutstandingResponses $ outstandingResponses c
-                return $ Just $ maybe (T.unpack reason) id x
+                return $ Just (closeType, T.unpack reason)
             else return x
   where
     killOutstandingResponses :: MVar (Seq.Seq (MVar a)) -> IO ()
@@ -647,6 +647,8 @@ closeChannel' c reason = do
             return undefined
 
 -- | opens a new channel on the connection
+--
+-- By default, if a channel is closed by an AMQP exception, this exception will be printed to stderr. You can prevent this behaviour by setting a custom exception handler (using 'addChannelExceptionHandler').
 openChannel :: Connection -> IO Channel
 openChannel c = do
     newInQueue <- newChan
@@ -668,15 +670,28 @@ openChannel c = do
         newChannelID <- allocateChannel (connChanAllocator c)
         let newChannel = Channel c newInQueue outRes (fromIntegral newChannelID) lastConsTag nxtSeq unconfSet aSet nSet ca closed conss retListeners cnfListeners handlers
         thrID <- forkFinally' (channelReceiver newChannel) $ \res -> do
-                   closeChannel' newChannel "closed"
+                   closeChannel' newChannel Normal "closed"
                    case res of
                      Right _ -> return ()
-                     Left ex -> readMVar handlers >>= mapM_ ($ unwrapChanThreadKilledException ex)
+                     Left ex -> do
+                        let unwrappedExc = unwrapChanThreadKilledException ex
+                        handlers' <- readMVar handlers
+
+                        case (null handlers', fromAbnormalChannelClose unwrappedExc) of
+                            (True, Just reason) -> hPutStrLn stderr $ "unhandled AMQP channel exception (chanId="++show newChannelID++"): "++reason
+                            _ -> mapM_ ($ unwrappedExc) handlers'
         when (IM.member newChannelID mp) $ CE.throwIO $ userError "openChannel fail: channel already open"
         return (IM.insert newChannelID (newChannel, thrID) mp, newChannel)
 
     SimpleMethod (Channel_open_ok _) <- request newChannel (SimpleMethod (Channel_open (ShortString "")))
     return newChannel
+
+  where
+    fromAbnormalChannelClose :: CE.SomeException -> Maybe String
+    fromAbnormalChannelClose exc =
+        case CE.fromException exc :: Maybe AMQPException of
+            Just (ChannelClosedException Abnormal reason) -> Just reason
+            _ -> Nothing
 
 -- | closes a channel. It is typically not necessary to manually call this as closing a connection will implicitly close all channels.
 closeChannel :: Channel -> IO ()
@@ -769,12 +784,12 @@ throwMostRelevantAMQPException :: Channel -> IO a
 throwMostRelevantAMQPException chan = do
     cc <- readMVar $ connClosed $ connection chan
     case cc of
-        Just r -> CE.throwIO $ ConnectionClosedException r
+        Just (closeType, r) -> CE.throwIO $ ConnectionClosedException closeType r
         Nothing -> do
             chc <- readMVar $ chanClosed chan
             case chc of
-                Just r -> CE.throwIO $ ChannelClosedException r
-                Nothing -> CE.throwIO $ ConnectionClosedException "unknown reason"
+                Just (ct, r) -> CE.throwIO $ ChannelClosedException ct r
+                Nothing -> CE.throwIO $ ConnectionClosedException Abnormal "unknown reason"
 
 waitForAllConfirms :: Channel -> STM (IntSet.IntSet, IntSet.IntSet)
 waitForAllConfirms chan = do
