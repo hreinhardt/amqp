@@ -330,7 +330,10 @@ openConnection'' connOpts = withSocketsDo $ do
                                              (ShortString "en_US")) ))
                     where clientProperties = FieldTable $ M.fromList $ [ ("platform", FVString "Haskell")
                                                                        , ("version" , FVString . T.pack $ showVersion version)
+                                                                       , ("capabilities", FVFieldTable clientCapabilities)
                                                                        ] ++ maybe [] (\x -> [("connection_name", FVString x)]) (coName connOpts)
+
+                          clientCapabilities = FieldTable $ M.fromList $ [ ("consumer_cancel_notify", FVBool True) ]
 
     handleSecureUntilTune handle sasl = do
         tuneOrSecure <- readFrame handle
@@ -487,7 +490,8 @@ data Channel = Channel {
 
                     chanActive :: Lock, -- used for flow-control. if lock is closed, no content methods will be sent
                     chanClosed :: MVar (Maybe (CloseType, String)),
-                    consumers :: MVar (M.Map Text ((Message, Envelope) -> IO ())), -- who is consumer of a queue? (consumerTag => callback)
+                    consumers :: MVar (M.Map Text ((Message, Envelope) -> IO (),    -- who is consumer of a queue? (consumerTag => callback)
+                                                   (ConsumerTag -> IO ()))),        -- cancellation notification callback
                     returnListeners :: MVar ([(Message, PublishError) -> IO ()]),
                     confirmListeners :: MVar ([(Word64, Bool, AckType) -> IO ()]),
                     chanExceptionHandlers :: MVar [CE.SomeException -> IO ()]
@@ -546,6 +550,7 @@ channelReceiver chan = do
     isResponse (SimpleMethod (Channel_close _ _ _ _)) = False
     isResponse (SimpleMethod (Basic_ack _ _)) = False
     isResponse (SimpleMethod (Basic_nack _ _ _)) = False
+    isResponse (SimpleMethod (Basic_cancel _ _)) = False
     isResponse _ = True
 
     --Basic.Deliver: forward msg to registered consumer
@@ -554,7 +559,7 @@ channelReceiver chan = do
                                 properties body) =
         withMVar (consumers chan) (\s -> do
             case M.lookup consumerTag s of
-                Just subscriber -> do
+                Just (subscriber, _) -> do
                     let msg = msgFromContentHeaderProperties properties body
                     let env = Envelope {envDeliveryTag = deliveryTag, envRedelivered = redelivered,
                                     envExchangeName = exchange, envRoutingKey = routingKey, envChannel = chan}
@@ -586,6 +591,7 @@ channelReceiver chan = do
                 hPutStrLn stderr $ "return listener on channel ["++(show $ channelID chan)++"] handling error ["++show pubError++"] threw exception: "++show ex
     handleAsync (SimpleMethod (Basic_ack deliveryTag multiple)) = handleConfirm deliveryTag multiple BasicAck
     handleAsync (SimpleMethod (Basic_nack deliveryTag multiple _)) = handleConfirm deliveryTag multiple BasicNack
+    handleAsync (SimpleMethod (Basic_cancel consumerTag _)) = handleCancel consumerTag
     handleAsync m = error ("Unknown method: " ++ show m)
 
     handleConfirm deliveryTag multiple k = do
@@ -608,6 +614,17 @@ channelReceiver chan = do
                                     parts = IntSet.partition (\n -> n <= seqNum) unconfSet
           modifyTVar' targetSet (\ts -> merge ts)
           writeTVar (unconfirmedSet chan) pending
+
+    handleCancel (ShortString consumerTag) =
+        withMVar (consumers chan) (\s -> do
+            case M.lookup consumerTag s of
+                Just (_, cancelCB) ->
+                    CE.catch (cancelCB consumerTag) $ \(ex :: CE.SomeException) ->
+                        hPutStrLn stderr $ "consumer cancellation listener "++(show consumerTag)++" on channel ["++(show $ channelID chan)++"] threw exception: "++ show ex
+                Nothing ->
+                    -- got a cancellation notification, but have no registered subscriber; so drop it
+                    return ()
+            )
 
     basicReturnToPublishError (Basic_return code (ShortString errText) (ShortString exchange) (ShortString routingKey)) =
         let replyError = case code of
