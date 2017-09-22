@@ -13,6 +13,7 @@ module Network.AMQP.Types (
     LongLongInt,
     ShortString(..),
     LongString(..),
+    ConsumerTag,
     Timestamp,
     FieldTable(..),
     FieldValue(..),
@@ -78,6 +79,8 @@ type PayloadSize = LongInt
 type ShortInt = Word16
 type LongInt = Word32
 type LongLongInt = Word64
+
+type ConsumerTag = Text
 
 newtype ShortString = ShortString Text
     deriving (Eq, Ord, Read, Show)

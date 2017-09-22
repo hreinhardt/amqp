@@ -70,6 +70,7 @@ module Network.AMQP (
     Channel,
     openChannel,
     addReturnListener,
+    addConsumerCancellationListener,
     addChannelExceptionHandler,
     qos,
 
@@ -128,7 +129,7 @@ module Network.AMQP (
     addConfirmationListener,
     ConfirmationResult(..),
     AckType(..),
-    
+
     -- * Flow Control
     flow,
 
@@ -351,8 +352,6 @@ deleteQueue chan queue = do
 -- | a 'Msg' with defaults set; you should override at least 'msgBody'
 newMsg :: Message
 newMsg = Message (BL.empty) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
-
-type ConsumerTag = Text
 
 -- | specifies whether you have to acknowledge messages that you receive from 'consumeMsgs' or 'getMsg'. If you use 'Ack', you have to call 'ackMsg' or 'ackEnv' after you have processed a message, otherwise it might be delivered again in the future
 data Ack = Ack | NoAck
