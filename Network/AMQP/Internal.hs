@@ -585,7 +585,7 @@ channelReceiver chan = do
                 hPutStrLn stderr $ "return listener on channel ["++(show $ channelID chan)++"] handling error ["++show pubError++"] threw exception: "++show ex
     handleAsync (SimpleMethod (Basic_ack deliveryTag multiple)) = handleConfirm deliveryTag multiple BasicAck
     handleAsync (SimpleMethod (Basic_nack deliveryTag multiple _)) = handleConfirm deliveryTag multiple BasicNack
-    handleAsync (SimpleMethod (Basic_cancel deliveryTag _)) = handleCancel deliveryTag
+    handleAsync (SimpleMethod (Basic_cancel consumerTag _)) = handleCancel consumerTag
     handleAsync m = error ("Unknown method: " ++ show m)
 
     handleConfirm deliveryTag multiple k = do
