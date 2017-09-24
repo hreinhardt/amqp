@@ -545,6 +545,7 @@ channelReceiver chan = do
     isResponse (SimpleMethod (Channel_close _ _ _ _)) = False
     isResponse (SimpleMethod (Basic_ack _ _)) = False
     isResponse (SimpleMethod (Basic_nack _ _ _)) = False
+    isResponse (SimpleMethod (Basic_cancel _ _)) = False
     isResponse _ = True
 
     --Basic.Deliver: forward msg to registered consumer
