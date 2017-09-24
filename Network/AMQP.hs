@@ -70,7 +70,6 @@ module Network.AMQP (
     Channel,
     openChannel,
     addReturnListener,
-    addConsumerCancellationListener,
     addChannelExceptionHandler,
     qos,
 
@@ -106,6 +105,7 @@ module Network.AMQP (
     Ack(..),
     consumeMsgs,
     consumeMsgs',
+    consumeMsgs'',
     cancelConsumer,
     publishMsg,
     publishMsg',
@@ -373,12 +373,17 @@ consumeMsgs chan queue ack callback =
 
 -- | an extended version of @consumeMsgs@ that allows you to include arbitrary arguments.
 consumeMsgs' :: Channel -> Text -> Ack -> ((Message,Envelope) -> IO ()) -> FieldTable -> IO ConsumerTag
-consumeMsgs' chan queue ack callback args = do
+consumeMsgs' chan queue ack callback args =
+    consumeMsgs'' chan queue ack callback (return ()) args
+
+-- | an extended version of @consumeMsgs'@ that allows you to define a consumer cancellation callback.
+consumeMsgs'' :: Channel -> Text -> Ack -> ((Message,Envelope) -> IO ()) -> IO () -> FieldTable -> IO ConsumerTag
+consumeMsgs'' chan queue ack callback cancelCB args = do
     --generate a new consumer tag
     newConsumerTag <- (fmap (T.pack . show)) $ modifyMVar (lastConsumerTag chan) $ \c -> return (c+1,c+1)
 
     --register the consumer
-    modifyMVar_ (consumers chan) $ return . M.insert newConsumerTag callback
+    modifyMVar_ (consumers chan) $ return . M.insert newConsumerTag (callback, cancelCB)
 
     writeAssembly chan (SimpleMethod $ Basic_consume
         1 -- ticket
