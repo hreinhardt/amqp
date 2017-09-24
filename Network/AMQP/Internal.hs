@@ -485,9 +485,9 @@ data Channel = Channel {
 
                     chanActive :: Lock, -- used for flow-control. if lock is closed, no content methods will be sent
                     chanClosed :: MVar (Maybe (CloseType, String)),
-                    consumers :: MVar (M.Map Text ((Message, Envelope) -> IO (),    -- who is consumer of a queue? (consumerTag => callback)
-                                                   IO ())),                         -- cancellation notification callback
+                    consumers :: MVar (M.Map Text ((Message, Envelope) -> IO ())), -- who is consumer of a queue? (consumerTag => callback)
                     returnListeners :: MVar ([(Message, PublishError) -> IO ()]),
+                    cancelListeners :: MVar ([ConsumerTag -> IO ()]),
                     confirmListeners :: MVar ([(Word64, Bool, AckType) -> IO ()]),
                     chanExceptionHandlers :: MVar [CE.SomeException -> IO ()]
                 }
@@ -554,7 +554,7 @@ channelReceiver chan = do
                                 properties body) =
         withMVar (consumers chan) (\s -> do
             case M.lookup consumerTag s of
-                Just (subscriber, _) -> do
+                Just subscriber -> do
                     let msg = msgFromContentHeaderProperties properties body
                     let env = Envelope {envDeliveryTag = deliveryTag, envRedelivered = redelivered,
                                     envExchangeName = exchange, envRoutingKey = routingKey, envChannel = chan}
@@ -610,18 +610,10 @@ channelReceiver chan = do
           modifyTVar' targetSet (\ts -> merge ts)
           writeTVar (unconfirmedSet chan) pending
 
-    handleCancel (ShortString consumerTag) =
-        withMVar (consumers chan) (\s -> do
-            case M.lookup consumerTag s of
-                Just (_, cancelCB) ->
-                    CE.catch cancelCB onError
-                Nothing ->
-                    -- got a cancellation notification, but have no registered subscriber; so drop it
-                    return ()
-            )
-      where
-        onError :: CE.SomeException -> IO ()
-        onError ex = hPutStrLn stderr $ "cunsumer cancellation listener on channel ["++(show $ channelID chan)++"] threw exception: "++ show ex
+    handleCancel (ShortString consumerTag) = do
+        withMVar (cancelListeners chan) $ \listeners ->
+            forM_ listeners $ \l -> CE.catch (l consumerTag) $ \(ex :: CE.SomeException) ->
+                hPutStrLn stderr $ "cunsumer cancellation listener on channel ["++(show $ channelID chan)++"] threw exception: "++ show ex
 
     basicReturnToPublishError (Basic_return code (ShortString errText) (ShortString exchange) (ShortString routingKey)) =
         let replyError = case code of
@@ -637,6 +629,13 @@ channelReceiver chan = do
 addReturnListener :: Channel -> ((Message, PublishError) -> IO ()) -> IO ()
 addReturnListener chan listener = do
     modifyMVar_ (returnListeners chan) $ \listeners -> return $ listener:listeners
+
+-- | registers a callback function that is called whenever a consumer is cancelled by the broker ('basic.cancel).
+--
+-- See https://www.rabbitmq.com/consumer-cancel.html
+addConsumerCancellationListener :: Channel -> (ConsumerTag -> IO ()) -> IO ()
+addConsumerCancellationListener chan listener = do
+    modifyMVar_ (cancelListeners chan) $ \listeners -> return $ listener:listeners
 
 -- | registers a callback function that is called whenever a channel is closed by an exception.
 addChannelExceptionHandler :: Channel -> (CE.SomeException -> IO ()) -> IO ()
@@ -677,6 +676,7 @@ openChannel c = do
     closed <- newMVar Nothing
     conss <- newMVar M.empty
     retListeners <- newMVar []
+    cancListeners <- newMVar []
     aSet <- newTVarIO IntSet.empty
     nSet <- newTVarIO IntSet.empty
     nxtSeq <- newMVar 0
@@ -687,7 +687,7 @@ openChannel c = do
     --add new channel to connection's channel map
     newChannel <- modifyMVar (connChannels c) $ \mp -> do
         newChannelID <- allocateChannel (connChanAllocator c)
-        let newChannel = Channel c newInQueue outRes (fromIntegral newChannelID) lastConsTag nxtSeq unconfSet aSet nSet ca closed conss retListeners cnfListeners handlers
+        let newChannel = Channel c newInQueue outRes (fromIntegral newChannelID) lastConsTag nxtSeq unconfSet aSet nSet ca closed conss retListeners cancListeners cnfListeners handlers
         thrID <- forkFinally' (channelReceiver newChannel) $ \res -> do
                    closeChannel' newChannel Normal "closed"
                    case res of
