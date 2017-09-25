@@ -149,6 +149,7 @@ data Connection = Connection {
                     connClosedLock :: MVar (), -- used by closeConnection to block until connection-close handshake is complete
                     connWriteLock :: MVar (), -- to ensure atomic writes to the socket
                     connClosedHandlers :: MVar [IO ()],
+                    connBlockedHandlers :: MVar [(Text -> IO (), IO ())],
                     connLastReceived :: MVar Int64, -- the timestamp from a monotonic clock when the last frame was received
                     connLastSent :: MVar Int64, -- the timestamp from a monotonic clock when the last frame was written
                     connServerProperties :: FieldTable -- the server properties sent in Connection_start
@@ -263,9 +264,10 @@ openConnection'' connOpts = withSocketsDo $ do
     writeLock <- newMVar ()
     ccl <- newEmptyMVar
     cClosedHandlers <- newMVar []
+    cBlockedHandlers <- newMVar []
     cLastReceived <- getTimestamp >>= newMVar
     cLastSent <- getTimestamp >>= newMVar
-    let conn = Connection handle cChanAllocator cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cClosedHandlers cLastReceived cLastSent serverProps
+    let conn = Connection handle cChanAllocator cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cClosedHandlers cBlockedHandlers cLastReceived cLastSent serverProps
 
     --spawn the connectionReceiver
     connThread <- forkFinally' (connectionReceiver conn) $ \res -> do
@@ -333,7 +335,8 @@ openConnection'' connOpts = withSocketsDo $ do
                                                                        , ("capabilities", FVFieldTable clientCapabilities)
                                                                        ] ++ maybe [] (\x -> [("connection_name", FVString x)]) (coName connOpts)
 
-                          clientCapabilities = FieldTable $ M.fromList $ [ ("consumer_cancel_notify", FVBool True) ]
+                          clientCapabilities = FieldTable $ M.fromList $ [ ("consumer_cancel_notify", FVBool True),
+                                                                           ("connection.blocked", FVBool True) ]
 
     handleSecureUntilTune handle sasl = do
         tuneOrSecure <- readFrame handle
@@ -433,6 +436,12 @@ addConnectionClosedHandler conn ifClosed handler = do
 
             -- otherwise add it to the list
             _ -> modifyMVar_ (connClosedHandlers conn) $ \old -> return $ handler:old
+
+-- | @addConnectionBlockedHandler conn blockedHandler unblockedHandler@ adds handlers that will be called
+-- when a connection gets blocked/unlocked due to server resource constraints.
+addConnectionBlockedHandler :: Connection -> (Text -> IO ()) -> IO () -> IO ()
+addConnectionBlockedHandler conn blockedHandler unblockedHandler =
+    modifyMVar_ (connBlockedHandlers conn) $ \old -> return $ (blockedHandler, unblockedHandler):old
 
 readFrame :: Conn.Connection -> IO Frame
 readFrame handle = do
@@ -551,6 +560,8 @@ channelReceiver chan = do
     isResponse (SimpleMethod (Basic_ack _ _)) = False
     isResponse (SimpleMethod (Basic_nack _ _ _)) = False
     isResponse (SimpleMethod (Basic_cancel _ _)) = False
+    isResponse (SimpleMethod (Connection_blocked _)) = False
+    isResponse (SimpleMethod Connection_unblocked) = False
     isResponse _ = True
 
     --Basic.Deliver: forward msg to registered consumer
@@ -592,6 +603,8 @@ channelReceiver chan = do
     handleAsync (SimpleMethod (Basic_ack deliveryTag multiple)) = handleConfirm deliveryTag multiple BasicAck
     handleAsync (SimpleMethod (Basic_nack deliveryTag multiple _)) = handleConfirm deliveryTag multiple BasicNack
     handleAsync (SimpleMethod (Basic_cancel consumerTag _)) = handleCancel consumerTag
+    handleAsync (SimpleMethod (Connection_blocked reason)) = handleBlocked reason
+    handleAsync (SimpleMethod Connection_unblocked) = handleUnblocked
     handleAsync m = error ("Unknown method: " ++ show m)
 
     handleConfirm deliveryTag multiple k = do
@@ -625,6 +638,16 @@ channelReceiver chan = do
                     -- got a cancellation notification, but have no registered subscriber; so drop it
                     return ()
             )
+
+    handleBlocked (ShortString reason) = do
+        withMVar (connBlockedHandlers $ connection chan) $ \listeners ->
+            forM_ listeners $ \(l, _) -> CE.catch (l reason) $ \(ex :: CE.SomeException) ->
+                hPutStrLn stderr $ "connection blocked listener on channel ["++(show $ channelID chan)++"] threw exception: "++ show ex
+
+    handleUnblocked = do
+        withMVar (connBlockedHandlers $ connection chan) $ \listeners ->
+            forM_ listeners $ \(_, l) -> CE.catch l $ \(ex :: CE.SomeException) ->
+                hPutStrLn stderr $ "connection blocked listener on channel ["++(show $ channelID chan)++"] threw exception: "++ show ex
 
     basicReturnToPublishError (Basic_return code (ShortString errText) (ShortString exchange) (ShortString routingKey)) =
         let replyError = case code of

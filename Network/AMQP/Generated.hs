@@ -110,6 +110,8 @@ instance Binary MethodPayload where
     put (Connection_open_ok a) = putWord16be 10 >> putWord16be 41 >> put a
     put (Connection_close a b c d) = putWord16be 10 >> putWord16be 50 >> put a >> put b >> put c >> put d
     put Connection_close_ok = putWord16be 10 >> putWord16be 51
+    put (Connection_blocked a) = putWord16be 10 >> putWord16be 60 >> put a
+    put Connection_unblocked = putWord16be 10 >> putWord16be 61
     put (Channel_open a) = putWord16be 20 >> putWord16be 10 >> put a
     put (Channel_open_ok a) = putWord16be 20 >> putWord16be 11 >> put a
     put (Channel_flow a) = putWord16be 20 >> putWord16be 20 >> put a
@@ -174,6 +176,8 @@ instance Binary MethodPayload where
             (10,41) -> get >>= \a ->  return (Connection_open_ok a)
             (10,50) -> get >>= \a -> get >>= \b -> get >>= \c -> get >>= \d ->  return (Connection_close a b c d)
             (10,51) ->  return Connection_close_ok
+            (10,60) -> get >>= \a ->  return (Connection_blocked a)
+            (10,61) ->  return Connection_unblocked
             (20,10) -> get >>= \a ->  return (Channel_open a)
             (20,11) -> get >>= \a ->  return (Channel_open_ok a)
             (20,20) -> get >>= \a ->  return (Channel_flow a)
@@ -271,6 +275,12 @@ data MethodPayload =
         ShortInt -- method-id
     |
     Connection_close_ok
+
+    |
+    Connection_blocked
+        ShortString -- reason
+    |
+    Connection_unblocked
 
     |
     Channel_open

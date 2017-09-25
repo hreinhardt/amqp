@@ -10,6 +10,9 @@
      the ability for the Server to send basic.ack, basic.nack and
       basic.cancel to the client, and
      the un-deprecation of exchange.declare{auto-delete} and exchange.declare{internal}
+
+     Modifications are (c) 2010-2013 VMware, Inc. and may be distributed under
+     the same BSD license as the stripped spec.
 -->
 
 <!--
@@ -892,6 +895,24 @@
       </rule>
       <chassis name = "client" implement = "MUST" />
       <chassis name = "server" implement = "MUST" />
+    </method>
+
+    <method name = "blocked" index = "60">
+      <doc>
+        This method indicates that a connection has been blocked
+        and does not accept new publishes.
+      </doc>
+      <chassis name = "server" implement = "MUST"/>
+      <chassis name = "client" implement = "MUST"/>
+      <field name = "reason" domain = "shortstr" />
+    </method>
+    <method name = "unblocked" index = "61">
+      <doc>
+        This method indicates that a connection has been unblocked
+        and now accepts publishes.
+      </doc>
+      <chassis name = "server" implement = "MUST"/>
+      <chassis name = "client" implement = "MUST"/>
     </method>
   </class>
 
@@ -2433,8 +2454,14 @@
 
       <field name = "global" domain = "bit" label = "apply to entire connection">
         <doc>
-          By default the QoS settings apply to the current channel only. If this field is
-          set, they are applied to the entire connection.
+          RabbitMQ has reinterpreted this field. The original
+          specification said: "By default the QoS settings apply to
+          the current channel only. If this field is set, they are
+          applied to the entire connection." Instead, RabbitMQ takes
+          global=false to mean that the QoS settings should apply
+          per-consumer (for new consumers on the channel; existing
+          ones being unaffected) and global=true to mean that the QoS
+          settings should apply per-channel.
         </doc>
       </field>
     </method>
@@ -2570,7 +2597,7 @@
         corresponding basic.cancel from the client). This allows
         clients to be notified of the loss of consumers due to events
         such as queue deletion. Note that as it is not a MUST for
-        clients to accept this method from the client, it is advisable
+        clients to accept this method from the server, it is advisable
         for the broker to be able to identify those clients that are
         capable of accepting the method, through some means of
         capability negotiation.
@@ -3230,7 +3257,7 @@
   <class name = "confirm" handler = "channel" index = "85" label = "work with confirms">
     <doc>
       The Confirm class allows publishers to put the channel in
-      confirm mode and susequently be notified when messages have been
+      confirm mode and subsequently be notified when messages have been
       handled by the broker.  The intention is that all messages
       published on a channel in confirm mode will be acknowledged at
       some point.  By acknowledging a message the broker assumes
