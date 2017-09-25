@@ -613,7 +613,7 @@ channelReceiver chan = do
     handleCancel (ShortString consumerTag) = do
         withMVar (cancelListeners chan) $ \listeners ->
             forM_ listeners $ \l -> CE.catch (l consumerTag) $ \(ex :: CE.SomeException) ->
-                hPutStrLn stderr $ "cunsumer cancellation listener on channel ["++(show $ channelID chan)++"] threw exception: "++ show ex
+                hPutStrLn stderr $ "consumer cancellation listener on channel ["++(show $ channelID chan)++"] threw exception: "++ show ex
 
     basicReturnToPublishError (Basic_return code (ShortString errText) (ShortString exchange) (ShortString routingKey)) =
         let replyError = case code of
