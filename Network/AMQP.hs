@@ -65,6 +65,7 @@ module Network.AMQP (
     closeChannel,
     closeConnection,
     addConnectionClosedHandler,
+    getServerProperties,
 
     -- * Channel
     Channel,

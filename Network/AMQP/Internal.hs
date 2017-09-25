@@ -150,7 +150,8 @@ data Connection = Connection {
                     connWriteLock :: MVar (), -- to ensure atomic writes to the socket
                     connClosedHandlers :: MVar [IO ()],
                     connLastReceived :: MVar Int64, -- the timestamp from a monotonic clock when the last frame was received
-                    connLastSent :: MVar Int64 -- the timestamp from a monotonic clock when the last frame was written
+                    connLastSent :: MVar Int64, -- the timestamp from a monotonic clock when the last frame was written
+                    connServerProperties :: FieldTable -- the server properties sent in Connection_start
                 }
 
 -- | Represents the parameters to connect to a broker or a cluster of brokers.
@@ -217,7 +218,7 @@ connectionReceiver conn = do
 openConnection'' :: ConnectionOpts -> IO Connection
 openConnection'' connOpts = withSocketsDo $ do
     handle <- connect [] $ coServers connOpts
-    (maxFrameSize, maxChannel, heartbeatTimeout) <- CE.handle (\(_ :: CE.IOException) -> CE.throwIO $ ConnectionClosedException Abnormal "Handshake failed. Please check the RabbitMQ logs for more information") $ do
+    (maxFrameSize, maxChannel, heartbeatTimeout, serverProps) <- CE.handle (\(_ :: CE.IOException) -> CE.throwIO $ ConnectionClosedException Abnormal "Handshake failed. Please check the RabbitMQ logs for more information") $ do
         Conn.connectionPut handle $ BS.append (BC.pack "AMQP")
                 (BS.pack [
                           1
@@ -227,7 +228,7 @@ openConnection'' connOpts = withSocketsDo $ do
                        ])
 
         -- S: connection.start
-        Frame 0 (MethodPayload (Connection_start _ _ _ (LongString serverMechanisms) _)) <- readFrame handle
+        Frame 0 (MethodPayload (Connection_start _ _ serverProps (LongString serverMechanisms) _)) <- readFrame handle
         selectedSASL <- selectSASLMechanism handle serverMechanisms
 
         -- C: start_ok
@@ -252,7 +253,7 @@ openConnection'' connOpts = withSocketsDo $ do
         Frame 0 (MethodPayload (Connection_open_ok _)) <- readFrame handle
 
         -- Connection established!
-        return (maxFrameSize, maxChannel, heartbeatTimeout)
+        return (maxFrameSize, maxChannel, heartbeatTimeout, serverProps)
 
     --build Connection object
     cChannels <- newMVar IM.empty
@@ -264,7 +265,7 @@ openConnection'' connOpts = withSocketsDo $ do
     cClosedHandlers <- newMVar []
     cLastReceived <- getTimestamp >>= newMVar
     cLastSent <- getTimestamp >>= newMVar
-    let conn = Connection handle cChanAllocator cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cClosedHandlers cLastReceived cLastSent
+    let conn = Connection handle cChanAllocator cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cClosedHandlers cLastReceived cLastSent serverProps
 
     --spawn the connectionReceiver
     connThread <- forkFinally' (connectionReceiver conn) $ \res -> do
@@ -414,6 +415,10 @@ closeConnection c = do
     -- wait for connection_close_ok by the server; this MVar gets filled in the CE.finally handler in openConnection'
     readMVar $ connClosedLock c
     return ()
+
+-- | get the server properties sent in connection.start
+getServerProperties :: Connection -> IO FieldTable
+getServerProperties = return . connServerProperties
 
 -- | @addConnectionClosedHandler conn ifClosed handler@ adds a @handler@ that will be called after the connection is closed (either by calling @closeConnection@ or by an exception). If the @ifClosed@ parameter is True and the connection is already closed, the handler will be called immediately. If @ifClosed == False@ and the connection is already closed, the handler will never be called
 addConnectionClosedHandler :: Connection -> Bool -> IO () -> IO ()
