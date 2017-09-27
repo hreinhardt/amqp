@@ -2,6 +2,8 @@
 
 * `ConnectionClosedException` and `ChannelClosedException` now specify whether the close was normal (user-initiated) or abnormal (caused by an AMQP exception)
 * channels that are abnormally closed and have no exception handler (set using `addChannelExceptionHandler`) will now print the error to `stderr`
+* new function `getServerProperties` to get the RabbitMQ server-properties
+* `consumeMsgs'` now allows setting a consumer-cancellation-callback
 
 ### Version 0.17.0
 
