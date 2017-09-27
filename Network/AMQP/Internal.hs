@@ -647,7 +647,7 @@ channelReceiver chan = do
     handleUnblocked = do
         withMVar (connBlockedHandlers $ connection chan) $ \listeners ->
             forM_ listeners $ \(_, l) -> CE.catch l $ \(ex :: CE.SomeException) ->
-                hPutStrLn stderr $ "connection blocked listener on channel ["++(show $ channelID chan)++"] threw exception: "++ show ex
+                hPutStrLn stderr $ "connection unblocked listener on channel ["++(show $ channelID chan)++"] threw exception: "++ show ex
 
     basicReturnToPublishError (Basic_return code (ShortString errText) (ShortString exchange) (ShortString routingKey)) =
         let replyError = case code of
