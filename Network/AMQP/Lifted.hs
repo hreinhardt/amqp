@@ -29,14 +29,15 @@ consumeMsgs chan queueName ack callback =
     liftBaseWith $ \runInIO ->
         A.consumeMsgs chan queueName ack (void . runInIO . callback)
 
--- | an extended version of @consumeMsgs@ that allows you to include arbitrary arguments.
+-- | an extended version of @consumeMsgs@ that allows you to define a consumer cancellation callback and include arbitrary arguments.
 consumeMsgs' :: MonadBaseControl IO m
              => A.Channel
              -> Text -- ^ Specifies the name of the queue to consume from.
              -> A.Ack
              -> ((A.Message, A.Envelope) -> m ())
+             -> (ConsumerTag -> m ())
              -> FieldTable
              -> m A.ConsumerTag
-consumeMsgs' chan queueName ack callback args =
+consumeMsgs' chan queueName ack callback cancelled args =
     liftBaseWith $ \runInIO ->
-        A.consumeMsgs' chan queueName ack (void . runInIO . callback) args
+        A.consumeMsgs' chan queueName ack (void . runInIO . callback) (void . runInIO . cancelled) args

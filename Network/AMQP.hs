@@ -70,7 +70,6 @@ module Network.AMQP (
     Channel,
     openChannel,
     addReturnListener,
-    addConsumerCancellationListener,
     addChannelExceptionHandler,
     qos,
 
@@ -369,16 +368,16 @@ ackToBool NoAck = True
 -- Functions that can safely be called on @chan@ are 'ackMsg', 'ackEnv', 'rejectMsg', 'recoverMsgs'. If you want to perform anything more complex, it's a good idea to wrap it inside 'forkIO'.
 consumeMsgs :: Channel -> Text -> Ack -> ((Message,Envelope) -> IO ()) -> IO ConsumerTag
 consumeMsgs chan queue ack callback =
-  consumeMsgs' chan queue ack callback (FieldTable M.empty)
+  consumeMsgs' chan queue ack callback (\_ -> return ()) (FieldTable M.empty)
 
--- | an extended version of @consumeMsgs@ that allows you to include arbitrary arguments.
-consumeMsgs' :: Channel -> Text -> Ack -> ((Message,Envelope) -> IO ()) -> FieldTable -> IO ConsumerTag
-consumeMsgs' chan queue ack callback args = do
+-- | an extended version of @consumeMsgs@ that allows you to define a consumer cancellation callback and include arbitrary arguments.
+consumeMsgs' :: Channel -> Text -> Ack -> ((Message,Envelope) -> IO ()) -> (ConsumerTag -> IO ()) -> FieldTable -> IO ConsumerTag
+consumeMsgs' chan queue ack callback cancelCB args = do
     --generate a new consumer tag
     newConsumerTag <- (fmap (T.pack . show)) $ modifyMVar (lastConsumerTag chan) $ \c -> return (c+1,c+1)
 
     --register the consumer
-    modifyMVar_ (consumers chan) $ return . M.insert newConsumerTag callback
+    modifyMVar_ (consumers chan) $ return . M.insert newConsumerTag (callback, cancelCB)
 
     writeAssembly chan (SimpleMethod $ Basic_consume
         1 -- ticket
