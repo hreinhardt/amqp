@@ -1,3 +1,7 @@
+### Version 0.18.1
+
+* new function `addConnectionBlockedHandler` to be notified when the connection is blocked (due to the server being resource-constrained)
+
 ### Version 0.18.0
 
 * `ConnectionClosedException` and `ChannelClosedException` now specify whether the close was normal (user-initiated) or abnormal (caused by an AMQP exception)
