@@ -451,6 +451,8 @@ addConnectionClosedHandler conn ifClosed handler = do
 
 -- | @addConnectionBlockedHandler conn blockedHandler unblockedHandler@ adds handlers that will be called
 -- when a connection gets blocked/unlocked due to server resource constraints.
+--
+-- More information: <https://www.rabbitmq.com/connection-blocked.html>
 addConnectionBlockedHandler :: Connection -> (Text -> IO ()) -> IO () -> IO ()
 addConnectionBlockedHandler conn blockedHandler unblockedHandler =
     modifyMVar_ (connBlockedHandlers conn) $ \old -> return $ (blockedHandler, unblockedHandler):old
