@@ -149,6 +149,7 @@ data Connection = Connection {
                     connClosedLock :: MVar (), -- used by closeConnection to block until connection-close handshake is complete
                     connWriteLock :: MVar (), -- to ensure atomic writes to the socket
                     connClosedHandlers :: MVar [IO ()],
+                    connBlockedHandlers :: MVar [(Text -> IO (), IO ())],
                     connLastReceived :: MVar Int64, -- the timestamp from a monotonic clock when the last frame was received
                     connLastSent :: MVar Int64, -- the timestamp from a monotonic clock when the last frame was written
                     connServerProperties :: FieldTable -- the server properties sent in Connection_start
@@ -206,6 +207,8 @@ connectionReceiver conn = do
         writeFrame (connHandle conn) $ Frame 0 $ MethodPayload Connection_close_ok
         myThreadId >>= killConnection conn Abnormal (CE.toException . ConnectionClosedException Abnormal . T.unpack $ errorMsg)
     forwardToChannel 0 HeartbeatPayload = return ()
+    forwardToChannel 0 (MethodPayload (Connection_blocked reason)) = handleBlocked reason
+    forwardToChannel 0 (MethodPayload Connection_unblocked) = handleUnblocked
     forwardToChannel 0 payload = hPutStrLn stderr $ "Got unexpected msg on channel zero: " ++ show payload
     forwardToChannel chanID payload = do
         --got asynchronous msg => forward to registered channel
@@ -213,6 +216,16 @@ connectionReceiver conn = do
             case IM.lookup (fromIntegral chanID) cs of
                 Just c -> writeChan (inQueue $ fst c) payload
                 Nothing -> hPutStrLn stderr $ "ERROR: channel not open " ++ show chanID
+
+    handleBlocked (ShortString reason) = do
+        withMVar (connBlockedHandlers conn) $ \listeners ->
+            forM_ listeners $ \(l, _) -> CE.catch (l reason) $ \(ex :: CE.SomeException) ->
+                hPutStrLn stderr $ "connection blocked listener threw exception: "++ show ex
+
+    handleUnblocked = do
+        withMVar (connBlockedHandlers conn) $ \listeners ->
+            forM_ listeners $ \(_, l) -> CE.catch l $ \(ex :: CE.SomeException) ->
+                hPutStrLn stderr $ "connection unblocked listener threw exception: "++ show ex
 
 -- | Opens a connection to a broker specified by the given 'ConnectionOpts' parameter.
 openConnection'' :: ConnectionOpts -> IO Connection
@@ -263,9 +276,10 @@ openConnection'' connOpts = withSocketsDo $ do
     writeLock <- newMVar ()
     ccl <- newEmptyMVar
     cClosedHandlers <- newMVar []
+    cBlockedHandlers <- newMVar []
     cLastReceived <- getTimestamp >>= newMVar
     cLastSent <- getTimestamp >>= newMVar
-    let conn = Connection handle cChanAllocator cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cClosedHandlers cLastReceived cLastSent serverProps
+    let conn = Connection handle cChanAllocator cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cClosedHandlers cBlockedHandlers cLastReceived cLastSent serverProps
 
     --spawn the connectionReceiver
     connThread <- forkFinally' (connectionReceiver conn) $ \res -> do
@@ -333,7 +347,8 @@ openConnection'' connOpts = withSocketsDo $ do
                                                                        , ("capabilities", FVFieldTable clientCapabilities)
                                                                        ] ++ maybe [] (\x -> [("connection_name", FVString x)]) (coName connOpts)
 
-                          clientCapabilities = FieldTable $ M.fromList $ [ ("consumer_cancel_notify", FVBool True) ]
+                          clientCapabilities = FieldTable $ M.fromList $ [ ("consumer_cancel_notify", FVBool True),
+                                                                           ("connection.blocked", FVBool True) ]
 
     handleSecureUntilTune handle sasl = do
         tuneOrSecure <- readFrame handle
@@ -433,6 +448,12 @@ addConnectionClosedHandler conn ifClosed handler = do
 
             -- otherwise add it to the list
             _ -> modifyMVar_ (connClosedHandlers conn) $ \old -> return $ handler:old
+
+-- | @addConnectionBlockedHandler conn blockedHandler unblockedHandler@ adds handlers that will be called
+-- when a connection gets blocked/unlocked due to server resource constraints.
+addConnectionBlockedHandler :: Connection -> (Text -> IO ()) -> IO () -> IO ()
+addConnectionBlockedHandler conn blockedHandler unblockedHandler =
+    modifyMVar_ (connBlockedHandlers conn) $ \old -> return $ (blockedHandler, unblockedHandler):old
 
 readFrame :: Conn.Connection -> IO Frame
 readFrame handle = do
