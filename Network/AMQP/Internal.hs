@@ -207,6 +207,8 @@ connectionReceiver conn = do
         writeFrame (connHandle conn) $ Frame 0 $ MethodPayload Connection_close_ok
         myThreadId >>= killConnection conn Abnormal (CE.toException . ConnectionClosedException Abnormal . T.unpack $ errorMsg)
     forwardToChannel 0 HeartbeatPayload = return ()
+    forwardToChannel 0 (MethodPayload (Connection_blocked reason)) = handleBlocked reason
+    forwardToChannel 0 (MethodPayload Connection_unblocked) = handleUnblocked
     forwardToChannel 0 payload = hPutStrLn stderr $ "Got unexpected msg on channel zero: " ++ show payload
     forwardToChannel chanID payload = do
         --got asynchronous msg => forward to registered channel
@@ -214,6 +216,16 @@ connectionReceiver conn = do
             case IM.lookup (fromIntegral chanID) cs of
                 Just c -> writeChan (inQueue $ fst c) payload
                 Nothing -> hPutStrLn stderr $ "ERROR: channel not open " ++ show chanID
+
+    handleBlocked (ShortString reason) = do
+        withMVar (connBlockedHandlers conn) $ \listeners ->
+            forM_ listeners $ \(l, _) -> CE.catch (l reason) $ \(ex :: CE.SomeException) ->
+                hPutStrLn stderr $ "connection blocked listener threw exception: "++ show ex
+
+    handleUnblocked = do
+        withMVar (connBlockedHandlers conn) $ \listeners ->
+            forM_ listeners $ \(_, l) -> CE.catch l $ \(ex :: CE.SomeException) ->
+                hPutStrLn stderr $ "connection unblocked listener threw exception: "++ show ex
 
 -- | Opens a connection to a broker specified by the given 'ConnectionOpts' parameter.
 openConnection'' :: ConnectionOpts -> IO Connection
@@ -560,8 +572,6 @@ channelReceiver chan = do
     isResponse (SimpleMethod (Basic_ack _ _)) = False
     isResponse (SimpleMethod (Basic_nack _ _ _)) = False
     isResponse (SimpleMethod (Basic_cancel _ _)) = False
-    isResponse (SimpleMethod (Connection_blocked _)) = False
-    isResponse (SimpleMethod Connection_unblocked) = False
     isResponse _ = True
 
     --Basic.Deliver: forward msg to registered consumer
@@ -603,8 +613,6 @@ channelReceiver chan = do
     handleAsync (SimpleMethod (Basic_ack deliveryTag multiple)) = handleConfirm deliveryTag multiple BasicAck
     handleAsync (SimpleMethod (Basic_nack deliveryTag multiple _)) = handleConfirm deliveryTag multiple BasicNack
     handleAsync (SimpleMethod (Basic_cancel consumerTag _)) = handleCancel consumerTag
-    handleAsync (SimpleMethod (Connection_blocked reason)) = handleBlocked reason
-    handleAsync (SimpleMethod Connection_unblocked) = handleUnblocked
     handleAsync m = error ("Unknown method: " ++ show m)
 
     handleConfirm deliveryTag multiple k = do
@@ -638,16 +646,6 @@ channelReceiver chan = do
                     -- got a cancellation notification, but have no registered subscriber; so drop it
                     return ()
             )
-
-    handleBlocked (ShortString reason) = do
-        withMVar (connBlockedHandlers $ connection chan) $ \listeners ->
-            forM_ listeners $ \(l, _) -> CE.catch (l reason) $ \(ex :: CE.SomeException) ->
-                hPutStrLn stderr $ "connection blocked listener on channel ["++(show $ channelID chan)++"] threw exception: "++ show ex
-
-    handleUnblocked = do
-        withMVar (connBlockedHandlers $ connection chan) $ \listeners ->
-            forM_ listeners $ \(_, l) -> CE.catch l $ \(ex :: CE.SomeException) ->
-                hPutStrLn stderr $ "connection unblocked listener on channel ["++(show $ channelID chan)++"] threw exception: "++ show ex
 
     basicReturnToPublishError (Basic_return code (ShortString errText) (ShortString exchange) (ShortString routingKey)) =
         let replyError = case code of
