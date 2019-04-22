@@ -16,10 +16,6 @@ Extra-source-files:  examples/ExampleConsumer.hs,
                      examples/ExampleProducer.hs,
                      changelog.md
 
-flag network-uri
-   description: Get Network.URI from the network-uri package
-   default: True
-
 Library
   Build-Depends:
     base >= 4 && < 5,
