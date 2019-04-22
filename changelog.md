@@ -1,3 +1,7 @@
+### Version 0.18.2
+
+* support `connection` 0.3 and drop support for `network` < 2.6
+
 ### Version 0.18.1
 
 * new function `addConnectionBlockedHandler` to be notified when the connection is blocked (due to the server being resource-constrained)

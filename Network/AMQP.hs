@@ -156,7 +156,7 @@ import Control.Monad(when)
 import Data.List.Split (splitOn)
 import Data.Binary
 import Data.Binary.Put
-import Network
+import Network.Socket (PortNumber)
 import Network.URI (unEscapeString)
 import Data.Text (Text)
 

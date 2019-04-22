@@ -14,7 +14,7 @@ import Data.Binary.Put as BPut
 import Data.Int (Int64)
 import Data.Maybe
 import Data.Text (Text)
-import Network
+import Network.Socket (PortNumber, withSocketsDo)
 import System.IO (hPutStrLn, stderr)
 
 import qualified Control.Exception as CE
