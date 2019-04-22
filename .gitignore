@@ -1,4 +1,6 @@
 dist/
+dist-newstyle/
+.ghc.environment*
 *.o
 *.hi
 testing/
