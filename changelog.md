@@ -1,3 +1,7 @@
+### Version 0.18.3
+
+* respond to `channel.close` messages from the server with `channel.close_ok`
+
 ### Version 0.18.2
 
 * support `connection` 0.3 and drop support for `network` < 2.6
