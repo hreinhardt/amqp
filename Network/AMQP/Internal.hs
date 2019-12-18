@@ -343,9 +343,9 @@ openConnection'' connOpts = withSocketsDo $ do
                                              (LongString $ saslInitialResponse sasl)
                                              (ShortString "en_US")) ))
                     where clientProperties = FieldTable $ M.fromList $ [ ("platform", FVString "Haskell")
-                                                                       , ("version" , FVString . T.pack $ showVersion version)
+                                                                       , ("version" , FVString . E.encodeUtf8 . T.pack $ showVersion version)
                                                                        , ("capabilities", FVFieldTable clientCapabilities)
-                                                                       ] ++ maybe [] (\x -> [("connection_name", FVString x)]) (coName connOpts)
+                                                                       ] ++ maybe [] (\x -> [("connection_name", FVString $ E.encodeUtf8 x)]) (coName connOpts)
 
                           clientCapabilities = FieldTable $ M.fromList $ [ ("consumer_cancel_notify", FVBool True),
                                                                            ("connection.blocked", FVBool True) ]

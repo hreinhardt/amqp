@@ -142,7 +142,7 @@ data FieldValue = FVBool Bool
                 | FVFloat Float
                 | FVDouble Double
                 | FVDecimal DecimalValue
-                | FVString Text
+                | FVString BS.ByteString
                 | FVFieldArray [FieldValue]
                 | FVTimestamp Timestamp
                 | FVFieldTable FieldTable
@@ -164,7 +164,7 @@ instance Binary FieldValue where
             'D' -> FVDecimal <$> get
             'S' -> do
                 LongString x <- get :: Get LongString
-                return $ FVString $ T.decodeUtf8 x
+                return $ FVString x
             'A' -> do
                 len <- get :: Get Int32
                 if len > 0
@@ -189,7 +189,7 @@ instance Binary FieldValue where
     put (FVFloat x) = put 'f' >> putFloat32be x
     put (FVDouble x) = put 'd' >> putFloat64be x
     put (FVDecimal x) = put 'D' >> put x
-    put (FVString x) = put 'S' >> put (LongString $ T.encodeUtf8 x)
+    put (FVString x) = put 'S' >> put (LongString x)
     put (FVFieldArray x) = do
         put 'A'
         if length x == 0
