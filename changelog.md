@@ -1,3 +1,7 @@
+### Version 0.19.0
+
+* change `FVString` to be binary instead of UTF-8 encoded
+
 ### Version 0.18.3
 
 * respond to `channel.close` messages from the server with `channel.close_ok`
