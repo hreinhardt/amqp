@@ -1,4 +1,6 @@
 {-# OPTIONS -XOverloadedStrings #-}
+module ExampleConfirms where
+
 import Network.AMQP
 import Control.Monad(forM_,forever)
 import Control.Concurrent(forkIO,threadDelay)
