@@ -1,3 +1,7 @@
+### Version 0.19.1
+
+* add `nackMsg` and `nackEnv` methods
+
 ### Version 0.19.0
 
 * change `FVString` to be binary instead of UTF-8 encoded
