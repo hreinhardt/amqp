@@ -117,6 +117,8 @@ module Network.AMQP (
 
     ackMsg,
     ackEnv,
+    nackMsg,
+    nackEnv,
 
     -- * Transactions
     txSelect,
@@ -479,6 +481,17 @@ ackMsg chan deliveryTag multiple =
 ackEnv :: Envelope -> IO ()
 ackEnv env = ackMsg (envChannel env) (envDeliveryTag env) False
 
+nackMsg :: Channel -> LongLongInt -> Bool -> Bool -> IO ()
+nackMsg chan deliveryTag multiple requeue =
+    writeAssembly chan $ (SimpleMethod (Basic_nack
+        deliveryTag -- delivery_tag
+        multiple -- multiple
+        requeue -- requeue
+        ))
+
+nackEnv :: Envelope -> IO ()
+nackEnv env = nackMsg (envChannel env) (envDeliveryTag env) False False
+
 -- | @rejectMsg chan deliveryTag requeue@ allows a client to reject a message. It can be used to interrupt and cancel large incoming messages, or return untreatable  messages to their original queue. If @requeue==False@, the message will be discarded.  If it is 'True', the server will attempt to requeue the message.
 --
 -- NOTE: RabbitMQ 1.7 doesn't implement this command
@@ -689,4 +702,3 @@ fromURI' uri = (unEscapeString host, nport, unEscapeString (dropWhile (=='/') ui
         uid   = if null uid'      then "guest" else uid'
         pw    = if null pw'       then "guest" else pw'
         host  = if null hst'      then "localhost" else hst'
-
