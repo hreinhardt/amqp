@@ -481,6 +481,12 @@ ackMsg chan deliveryTag multiple =
 ackEnv :: Envelope -> IO ()
 ackEnv env = ackMsg (envChannel env) (envDeliveryTag env) False
 
+{- | @nackMsg chan deliveryTag multiple requeue@ rejects one or more messages. A message MUST not be rejected more than once.
+
+if @multiple==True@, the @deliverTag@ is treated as \"up to and including\", so that the client can reject multiple messages with a single method call. If @multiple==False@, @deliveryTag@ refers to a single message.
+
+If @requeue==True@, the server will try to requeue the message. If @requeue==False@, the message will be dropped by the server.
+-}
 nackMsg :: Channel -> LongLongInt -> Bool -> Bool -> IO ()
 nackMsg chan deliveryTag multiple requeue =
     writeAssembly chan $ (SimpleMethod (Basic_nack
@@ -489,6 +495,7 @@ nackMsg chan deliveryTag multiple requeue =
         requeue -- requeue
         ))
 
+-- | Reject a single message. This is a wrapper for 'nackMsg' in case you have the 'Envelope' at hand.
 nackEnv :: Envelope -> IO ()
 nackEnv env = nackMsg (envChannel env) (envDeliveryTag env) False False
 
