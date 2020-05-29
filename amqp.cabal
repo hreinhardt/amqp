@@ -11,12 +11,13 @@ Maintainer:          Holger Reinhardt <hreinhardt@gmail.com>
 Build-Type:          Simple
 Homepage:            https://github.com/hreinhardt/amqp
 bug-reports:         https://github.com/hreinhardt/amqp/issues
-Cabal-Version:       >=1.8
+Cabal-Version:       >=1.10
 Extra-source-files:  examples/ExampleConsumer.hs,
                      examples/ExampleProducer.hs,
                      changelog.md
 
 Library
+  default-language: Haskell2010
   Build-Depends:
     base >= 4 && < 5,
     binary >= 0.5,
@@ -39,6 +40,7 @@ Library
   GHC-Options:        -Wall
 
 Executable amqp-builder
+  default-language: Haskell2010
   Build-Depends:      base >= 4 && < 5, xml == 1.3.*, containers >= 0.2
   Hs-Source-Dirs:     Tools
   Main-is:            Builder.hs
@@ -49,6 +51,7 @@ source-repository head
   location: https://github.com/hreinhardt/amqp
 
 test-suite spec
+  default-language: Haskell2010
   type:
       exitcode-stdio-1.0
   ghc-options:
