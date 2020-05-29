@@ -691,21 +691,31 @@ qos chan prefetchSize prefetchCount global = do
 -- | Any of these fields may be empty and will be replaced with defaults from @amqp://guest:guest@localhost:5672/@
 fromURI :: String -> ConnectionOpts
 fromURI uri = defaultConnectionOpts {
-    coServers = [(host,fromIntegral nport)],
-    coVHost = (T.pack vhost),
-    coAuth = [plain (T.pack uid) (T.pack pw)]
+    coServers     = hostPorts',
+    coVHost       = (T.pack vhost),
+    coAuth        = [plain (T.pack uid) (T.pack pw)],
+    coTLSSettings = if tls then Just TLSTrusted else Nothing
   }
-  where (host,nport,uid,pw,vhost) = fromURI' uri
+  where (hostPorts, uid, pw, vhost, tls) = fromURI' uri
+        hostPorts' = [(h, fromIntegral p) | (h, p) <- hostPorts]
 
-fromURI' :: String -> (String,Int,String,String,String)
-fromURI' uri = (unEscapeString host, nport, unEscapeString (dropWhile (=='/') uid), unEscapeString pw, unEscapeString vhost)
+fromURI' :: String -> ([(String, Int)], String, String, String, Bool)
+fromURI' uri = (fromHostPort dport <$> hstPorts,
+    unEscapeString (dropWhile (=='/') uid), unEscapeString pw,
+    unEscapeString vhost, tls)
   where (pre :suf  :    _) = splitOn "@" (uri ++ "@" ) -- look mom, no regexp dependencies
         (pro :uid' :pw':_) = splitOn ":" (pre ++ "::")
         (hnp :thost:    _) = splitOn "/" (suf ++ "/" )
-        (hst':port :    _) = splitOn ":" (hnp ++ ":" )
+        hstPorts           = splitOn "," hnp
         vhost = if null thost     then "/"     else thost
         dport = if pro == "amqps" then 5671    else 5672
-        nport = if null port      then dport   else read port
         uid   = if null uid'      then "guest" else uid'
         pw    = if null pw'       then "guest" else pw'
-        host  = if null hst'      then "localhost" else hst'
+        tls   = pro == "amqps"
+
+fromHostPort :: Int -> String -> (String, Int)
+fromHostPort dport hostPort = (unEscapeString host, nport)
+    where
+        (hst':port :    _) = splitOn ":" (hostPort ++ ":" )
+        host  = if null hst' then "localhost" else hst'
+        nport = if null port then dport       else read port

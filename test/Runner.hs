@@ -2,6 +2,7 @@ import Test.Hspec
 
 import qualified ConnectionSpec
 import qualified ChannelSpec
+import qualified FromURISpec
 import qualified QueueDeclareSpec
 import qualified QueueDeleteSpec
 import qualified QueuePurgeSpec
@@ -21,6 +22,8 @@ main = hspec $ do
     describe "ExchangeDeclareSpec" ExchangeDeclareSpec.spec
     -- exchange.delete
     describe "ExchangeDeleteSpec"  ExchangeDeleteSpec.spec
+    -- fromuri.*
+    describe "FromURISpec"         FromURISpec.spec
     -- queue.declare
     describe "QueueDeclareSpec"    QueueDeclareSpec.spec
     -- queue.delete
