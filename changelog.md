@@ -1,3 +1,8 @@
+### Version 0.20.0
+
+* `fromURI` now activates TLS if the URI starts with `ampqs://`. Previously it only changed the port, without activating TLS.
+* `fromURI` now supports multi-broker URIs in the form of `amqp://user:pass@host-1:port-2,host-2:port-2/vhost`
+
 ### Version 0.19.1
 
 * add `nackMsg` and `nackEnv` methods
