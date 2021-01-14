@@ -366,9 +366,34 @@ ackToBool NoAck = True
 
 -- | @consumeMsgs chan queue ack callback@ subscribes to the given queue and returns a consumerTag. For any incoming message, the callback will be run. If @ack == 'Ack'@ you will have to acknowledge all incoming messages (see 'ackMsg' and 'ackEnv')
 --
--- If you do any exception handling inside the callback, you should make sure not to catch 'ChanThreadKilledException', or re-throw it if you did catch it, since it is used internally by the library to close channels.
+-- === Exceptions in the callback
 --
--- NOTE: The callback will be run on the channel's receiver thread (which is responsible for handling all incoming messages on this channel, including responses to requests from the client) so DO NOT perform any blocking request on @chan@ inside the callback, as this would lead to a dead-lock. However, you CAN perform requests on other open channels inside the callback, though that would keep @chan@ blocked until the requests are done, so it is not recommended.
+-- If an exception occurs in @callback@, it will be caught and printed to @stderr@. But you should not depend on this behaviour (it might change in future versions of this library);
+--  instead, it is /strongly/ recommended that you catch any exceptions that your callback may throw and handle them appropriately.
+-- But make sure not to catch 'ChanThreadKilledException' (or re-throw it if you did catch it), since it is used internally by the library to close channels.
+--
+-- So unless you are confident that your callback won't throw exceptions, you may want to structure your code like this:
+--
+-- > consumeMsgs chan name Ack $ \(msg, env) -> (do ...)
+-- >        `CE.catches`
+-- >    [
+-- >        -- rethrow this exception, since the AMPQ library uses it internally
+-- >        CE.Handler $ \(e::ChanThreadKilledException) -> CE.throwIO e,
+-- >
+-- >        -- (optional) catch individual exceptions that your code may throw
+-- >        CE.Handler $ \(e::CE.IOException) -> ...,
+-- >        CE.Handler $ \(e::SomeOtherException) -> ...,
+-- >
+-- >        -- catch all exceptions that weren't handled above
+-- >        CE.Handler $ \(e::CE.SomeException) -> ...
+-- >    ]
+--
+-- In practice, it might be useful to encapsulate this exception-handling logic in a custom wrapper-function so that you can reuse it for every callback you pass to @consumeMsgs@.
+--
+-- === Blocking requests in the callback
+--
+-- The @callback@ will be run on the channel's receiver thread (which is responsible for handling all incoming messages on this channel, including responses to requests from the client) so DO NOT perform any blocking request on @chan@ inside the callback, as this would lead to a dead-lock. However, you CAN perform requests on other open channels inside the callback, though that would keep @chan@ blocked until the requests are done, so it is not recommended.
+--
 -- Unless you're using AMQP flow control, the following functions can safely be called on @chan@: 'ackMsg', 'ackEnv', 'rejectMsg', 'publishMsg'. If you use flow-control or want to perform anything more complex, it's a good idea to wrap your requests inside 'forkIO'.
 consumeMsgs :: Channel -> Text -> Ack -> ((Message,Envelope) -> IO ()) -> IO ConsumerTag
 consumeMsgs chan queue ack callback =
