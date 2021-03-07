@@ -394,7 +394,7 @@ ackToBool NoAck = True
 --
 -- The @callback@ will be run on the channel's receiver thread (which is responsible for handling all incoming messages on this channel, including responses to requests from the client) so DO NOT perform any blocking request on @chan@ inside the callback, as this would lead to a dead-lock. However, you CAN perform requests on other open channels inside the callback, though that would keep @chan@ blocked until the requests are done, so it is not recommended.
 --
--- Unless you're using AMQP flow control, the following functions can safely be called on @chan@: 'ackMsg', 'ackEnv', 'rejectMsg', 'publishMsg'. If you use flow-control or want to perform anything more complex, it's a good idea to wrap your requests inside 'forkIO'.
+-- Unless you're using AMQP flow control, the following functions can safely be called on @chan@: 'ackMsg', 'ackEnv', 'rejectMsg', 'publishMsg'. If you use flow-control or want to perform anything more complex, it's a good idea to use the <hackage.haskell.org/package/async async> library to make the callback non-blocking
 consumeMsgs :: Channel -> Text -> Ack -> ((Message,Envelope) -> IO ()) -> IO ConsumerTag
 consumeMsgs chan queue ack callback =
   consumeMsgs' chan queue ack callback (\_ -> return ()) (FieldTable M.empty)
