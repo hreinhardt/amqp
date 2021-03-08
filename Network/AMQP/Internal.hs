@@ -766,8 +766,11 @@ openChannel c = do
     fromAbnormalChannelClose :: CE.SomeException -> Maybe String
     fromAbnormalChannelClose exc =
         case CE.fromException exc :: Maybe AMQPException of
+            Just (ConnectionClosedException _ _) -> Nothing
+            Just (ChannelClosedException Normal _) -> Nothing
             Just (ChannelClosedException Abnormal reason) -> Just reason
-            _ -> Nothing
+            Just (AllChannelsAllocatedException _) -> Just "all channels allocated"
+            Nothing -> Just $ show exc
 
 -- | closes a channel. It is typically not necessary to manually call this as closing a connection will implicitly close all channels.
 closeChannel :: Channel -> IO ()
