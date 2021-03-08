@@ -212,6 +212,8 @@ connectionReceiver conn = do
         withMVar (connChannels conn) $ \cs -> do
             case IM.lookup (fromIntegral chanID) cs of
                 Just c -> writeChan (inQueue $ fst c) payload
+                -- TODO: It's unclear how to handle this, although it probably never
+                --   happens in practice.
                 Nothing -> hPutStrLn stderr $ "ERROR: channel not open " ++ show chanID
 
     handleBlocked (ShortString reason) = do
@@ -524,6 +526,8 @@ data ChanThreadKilledException = ChanThreadKilledException { cause :: CE.SomeExc
 
 instance CE.Exception ChanThreadKilledException
 
+-- | If the given exception is an instance of ChanThreadKilledException, this method returns
+--    the inner exception. Otherwise the exception is returned unchanged.
 unwrapChanThreadKilledException :: CE.SomeException -> CE.SomeException
 unwrapChanThreadKilledException e = maybe e cause $ CE.fromException e
 
@@ -660,7 +664,7 @@ channelReceiver chan = do
         in pubError
     basicReturnToPublishError x = error $ "basicReturnToPublishError fail: "++show x
 
--- | registers a callback function that is called whenever a message is returned from the broker ('basic.return').
+-- | Registers a callback function that is called whenever a message is returned from the broker ('basic.return').
 addReturnListener :: Channel -> ((Message, PublishError) -> IO ()) -> IO ()
 addReturnListener chan listener = do
     modifyMVar_ (returnListeners chan) $ \listeners -> return $ listener:listeners
@@ -690,6 +694,8 @@ closeChannel' c closeType reason = do
     killOutstandingResponses outResps = do
         modifyMVar_ outResps $ \val -> do
             F.mapM_ (\x -> tryPutMVar x $ error "channel closed") val
+            -- Intentionally put 'undefined' into the MVar, so that reading from it will throw.
+            -- This MVar will be read from the 'request' method, where we appropriately catch ErrorCall exceptions.
             return undefined
 
 -- | opens a new channel on the connection

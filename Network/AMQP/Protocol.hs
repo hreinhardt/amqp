@@ -76,6 +76,7 @@ getPayload 8 payloadSize = do
     -- ignoring the actual payload, but still need to read the bytes from the network buffer
     _ <- getLazyByteString $ fromIntegral payloadSize
     return HeartbeatPayload
+-- this should never happen:
 getPayload n _ = error ("Unknown frame payload: " ++ show n)
 
 putPayload :: FramePayload -> Put

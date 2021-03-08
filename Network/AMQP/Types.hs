@@ -179,6 +179,7 @@ instance Binary FieldValue where
             'x' -> do
                 len <- get :: Get Word32
                 FVByteArray <$> getByteString (fromIntegral len)
+            -- this should never happen:
             c   -> error ("Unknown field type: " ++ show c)
 
     put (FVBool x) = put 't' >> put x
