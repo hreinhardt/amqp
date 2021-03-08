@@ -669,10 +669,27 @@ addReturnListener :: Channel -> ((Message, PublishError) -> IO ()) -> IO ()
 addReturnListener chan listener = do
     modifyMVar_ (returnListeners chan) $ \listeners -> return $ listener:listeners
 
--- | registers a callback function that is called whenever a channel is closed by an exception.
+-- | Registers a callback function that is called whenever a channel is closed by an exception.
+--
+-- This method will always be called when a channel is closed, whether through normal means
+--  ('closeChannel', 'closeConnection') or by some AMQP exception.
+--
+-- You can use 'isNormalChannelClose' to figure out if the exception was normal or due to an
+--  AMQP exception.
 addChannelExceptionHandler :: Channel -> (CE.SomeException -> IO ()) -> IO ()
 addChannelExceptionHandler chan handler = do
     modifyMVar_ (chanExceptionHandlers chan) $ \handlers -> return $ handler:handlers
+
+-- | This can be used with the exception passed to 'addChannelExceptionHandler'.
+--
+-- Returns True if the argument is a 'ConnectionClosedException' or 'ChannelClosedException' that happened
+--  normally (i.e. by the user calling 'closeChannel' or 'closeConnection') and not due to some
+--  AMQP exception.
+isNormalChannelClose :: CE.SomeException -> Bool
+isNormalChannelClose e = case CE.fromException e :: Maybe AMQPException of
+    Just (ChannelClosedException Normal _) -> True
+    Just (ConnectionClosedException Normal _) -> True
+    _ -> False
 
 -- closes the channel internally; but doesn't tell the server
 closeChannel' :: Channel -> CloseType -> Text -> IO ()
@@ -701,6 +718,13 @@ closeChannel' c closeType reason = do
 -- | opens a new channel on the connection
 --
 -- By default, if a channel is closed by an AMQP exception, this exception will be printed to stderr. You can prevent this behaviour by setting a custom exception handler (using 'addChannelExceptionHandler').
+--
+-- Example of adding an exception-handler:
+--
+-- > chan <- openChannel conn
+-- > addChannelExceptionHandler chan $ \e -> do
+-- >     unless (isNormalChannelClose e) $ do
+-- >         putStrLn $ "channel exception: "++show e
 openChannel :: Connection -> IO Channel
 openChannel c = do
     newInQueue <- newChan

@@ -73,6 +73,7 @@ module Network.AMQP (
     openChannel,
     addReturnListener,
     addChannelExceptionHandler,
+    isNormalChannelClose,
     qos,
 
     -- * Exchanges
