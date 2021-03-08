@@ -43,11 +43,11 @@ chooseMin a (Just b) = min a b
 chooseMin a Nothing  = a
 
 getTimestamp :: IO Int64
-getTimestamp = fmap µs $ getTime Monotonic
+getTimestamp = µs <$> getTime Monotonic
   where
     seconds spec = (fromIntegral . sec) spec * 1000 * 1000
     micros spec = (fromIntegral . nsec) spec `div` 1000
-    µs spec = (seconds spec) + (micros spec)
+    µs spec = seconds spec + micros spec
 
 scheduleAtFixedRate :: Int -> IO () -> IO ThreadId
 scheduleAtFixedRate interval_µs action = forkIO $ forever $ do

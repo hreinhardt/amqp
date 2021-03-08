@@ -14,7 +14,7 @@ data ChannelAllocator = ChannelAllocator Int -- highest permitted channel id
 
 newChannelAllocator :: Int -> IO ChannelAllocator
 newChannelAllocator maxChannel =
-    fmap (ChannelAllocator maxChannel) $ V.replicate 1024 0
+    ChannelAllocator maxChannel <$> V.replicate 1024 0
 
 allocateChannel :: ChannelAllocator -> IO Int
 allocateChannel (ChannelAllocator maxChannel c) = do

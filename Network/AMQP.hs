@@ -177,19 +177,17 @@ import Network.AMQP.Helpers
 ----- EXCHANGE -----
 
 -- | A record that contains the fields needed when creating a new exhange using 'declareExchange'. The default values apply when you use 'newExchange'.
-data ExchangeOpts = ExchangeOpts
-                {
-                    exchangeName :: Text, -- ^ (must be set); the name of the exchange
-                    exchangeType :: Text, -- ^ (must be set); the type of the exchange (\"fanout\", \"direct\", \"topic\", \"headers\")
+data ExchangeOpts = ExchangeOpts {
+    exchangeName :: Text, -- ^ (must be set); the name of the exchange
+    exchangeType :: Text, -- ^ (must be set); the type of the exchange (\"fanout\", \"direct\", \"topic\", \"headers\")
 
-                    -- optional
-                    exchangePassive :: Bool, -- ^ (default 'False'); If set, the server will not create the exchange. The client can use this to check whether an exchange exists without modifying the server state.
-                    exchangeDurable :: Bool, -- ^ (default 'True'); If set when creating a new exchange, the exchange will be marked as durable. Durable exchanges remain active when a server restarts. Non-durable exchanges (transient exchanges) are purged if/when a server restarts.
-                    exchangeAutoDelete :: Bool, -- ^ (default 'False'); If set, the exchange is deleted when all queues have finished using it.
-                    exchangeInternal :: Bool, -- ^ (default 'False'); If set, the exchange may not be used directly by publishers, but only when bound to other exchanges. Internal exchanges are used to construct wiring that is not visible to applications.
-                    exchangeArguments  :: FieldTable -- ^ (default empty); A set of arguments for the declaration. The syntax and semantics of these arguments depends on the server implementation.
-                }
-    deriving (Eq, Ord, Read, Show)
+    -- optional
+    exchangePassive :: Bool, -- ^ (default 'False'); If set, the server will not create the exchange. The client can use this to check whether an exchange exists without modifying the server state.
+    exchangeDurable :: Bool, -- ^ (default 'True'); If set when creating a new exchange, the exchange will be marked as durable. Durable exchanges remain active when a server restarts. Non-durable exchanges (transient exchanges) are purged if/when a server restarts.
+    exchangeAutoDelete :: Bool, -- ^ (default 'False'); If set, the exchange is deleted when all queues have finished using it.
+    exchangeInternal :: Bool, -- ^ (default 'False'); If set, the exchange may not be used directly by publishers, but only when bound to other exchanges. Internal exchanges are used to construct wiring that is not visible to applications.
+    exchangeArguments  :: FieldTable -- ^ (default empty); A set of arguments for the declaration. The syntax and semantics of these arguments depends on the server implementation.
+} deriving (Eq, Ord, Read, Show)
 
 -- | an 'ExchangeOpts' with defaults set; you must override at least the 'exchangeName' and 'exchangeType' fields.
 newExchange :: ExchangeOpts
@@ -259,19 +257,17 @@ deleteExchange chan exchange = do
 ----- QUEUE -----
 
 -- | A record that contains the fields needed when creating a new queue using 'declareQueue'. The default values apply when you use 'newQueue'.
-data QueueOpts = QueueOpts
-             {
-                --must be set
-                queueName :: Text, -- ^ (default \"\"); the name of the queue; if left empty, the server will generate a new name and return it from the 'declareQueue' method
+data QueueOpts = QueueOpts {
+    --must be set
+    queueName :: Text, -- ^ (default \"\"); the name of the queue; if left empty, the server will generate a new name and return it from the 'declareQueue' method
 
-                --optional
-                queuePassive :: Bool, -- ^ (default 'False'); If set, the server will not create the queue.  The client can use this to check whether a queue exists without modifying the server state.
-                queueDurable :: Bool, -- ^ (default 'True'); If set when creating a new queue, the queue will be marked as durable. Durable queues remain active when a server restarts. Non-durable queues (transient queues) are purged if/when a server restarts. Note that durable queues do not necessarily hold persistent messages, although it does not make sense to send persistent messages to a transient queue.
-                queueExclusive :: Bool, -- ^ (default 'False'); Exclusive queues may only be consumed from by the current connection. Setting the 'exclusive' flag always implies 'auto-delete'.
-                queueAutoDelete :: Bool, -- ^ (default 'False'); If set, the queue is deleted when all consumers have finished using it. Last consumer can be cancelled either explicitly or because its channel is closed. If there was no consumer ever on the queue, it won't be deleted.
-                queueHeaders :: FieldTable -- ^ (default empty): Headers to use when creating this queue, such as @x-message-ttl@ or @x-dead-letter-exchange@.
-             }
-      deriving (Eq, Ord, Read, Show)
+    --optional
+    queuePassive :: Bool, -- ^ (default 'False'); If set, the server will not create the queue.  The client can use this to check whether a queue exists without modifying the server state.
+    queueDurable :: Bool, -- ^ (default 'True'); If set when creating a new queue, the queue will be marked as durable. Durable queues remain active when a server restarts. Non-durable queues (transient queues) are purged if/when a server restarts. Note that durable queues do not necessarily hold persistent messages, although it does not make sense to send persistent messages to a transient queue.
+    queueExclusive :: Bool, -- ^ (default 'False'); Exclusive queues may only be consumed from by the current connection. Setting the 'exclusive' flag always implies 'auto-delete'.
+    queueAutoDelete :: Bool, -- ^ (default 'False'); If set, the queue is deleted when all consumers have finished using it. Last consumer can be cancelled either explicitly or because its channel is closed. If there was no consumer ever on the queue, it won't be deleted.
+    queueHeaders :: FieldTable -- ^ (default empty): Headers to use when creating this queue, such as @x-message-ttl@ or @x-dead-letter-exchange@.
+} deriving (Eq, Ord, Read, Show)
 
 -- | a 'QueueOpts' with defaults set; you should override at least 'queueName'.
 newQueue :: QueueOpts
@@ -284,15 +280,15 @@ newQueue = QueueOpts "" False True False False (FieldTable M.empty)
 -- @messageCount@ is the number of messages in the queue, which will be zero for newly-created queues. @consumerCount@ is the number of active consumers for the queue.
 declareQueue :: Channel -> QueueOpts -> IO (Text, Int, Int)
 declareQueue chan queue = do
-    (SimpleMethod (Queue_declare_ok (ShortString qName) messageCount consumerCount)) <- request chan $ (SimpleMethod (Queue_declare
-            1 -- ticket
-            (ShortString $ queueName queue)
-            (queuePassive queue)
-            (queueDurable queue)
-            (queueExclusive queue)
-            (queueAutoDelete queue)
-            False -- no-wait; true means no answer from server
-            (queueHeaders queue)))
+    SimpleMethod (Queue_declare_ok (ShortString qName) messageCount consumerCount) <- request chan $ SimpleMethod $ Queue_declare
+        1 -- ticket
+        (ShortString $ queueName queue)
+        (queuePassive queue)
+        (queueDurable queue)
+        (queueExclusive queue)
+        (queueAutoDelete queue)
+        False -- no-wait; true means no answer from server
+        (queueHeaders queue)
     return (qName, fromIntegral messageCount, fromIntegral consumerCount)
 
 -- | @bindQueue chan queue exchange routingKey@ binds the queue to the exchange using the provided routing key. If @exchange@ is the empty string, the default exchange will be used.
@@ -331,30 +327,28 @@ unbindQueue' chan queue exchange routingKey args = do
 -- | remove all messages from the queue; returns the number of messages that were in the queue
 purgeQueue :: Channel -> Text -> IO Word32
 purgeQueue chan queue = do
-    (SimpleMethod (Queue_purge_ok msgCount)) <- request chan $ (SimpleMethod (Queue_purge
+    SimpleMethod (Queue_purge_ok msgCount) <- request chan $ SimpleMethod $ Queue_purge
         1 -- ticket
         (ShortString queue) -- queue
         False -- nowait
-        ))
     return msgCount
 
 -- | deletes the queue; returns the number of messages that were in the queue before deletion
 deleteQueue :: Channel -> Text -> IO Word32
 deleteQueue chan queue = do
-    (SimpleMethod (Queue_delete_ok msgCount)) <- request chan $ (SimpleMethod (Queue_delete
+    SimpleMethod (Queue_delete_ok msgCount) <- request chan $ SimpleMethod $ Queue_delete
         1 -- ticket
         (ShortString queue) -- queue
         False -- if_unused
         False -- if_empty
         False -- nowait
-        ))
     return msgCount
 
 ----- MSG (the BASIC class in AMQP) -----
 
 -- | a 'Msg' with defaults set; you should override at least 'msgBody'
 newMsg :: Message
-newMsg = Message (BL.empty) Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
+newMsg = Message BL.empty Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing Nothing
 
 -- | specifies whether you have to acknowledge messages that you receive from 'consumeMsgs' or 'getMsg'. If you use 'Ack', you have to call 'ackMsg' or 'ackEnv' after you have processed a message, otherwise it might be delivered again in the future
 data Ack = Ack | NoAck
@@ -397,13 +391,13 @@ ackToBool NoAck = True
 -- Unless you're using AMQP flow control, the following functions can safely be called on @chan@: 'ackMsg', 'ackEnv', 'rejectMsg', 'publishMsg'. If you use flow-control or want to perform anything more complex, it's a good idea to wrap your requests inside 'forkIO'.
 consumeMsgs :: Channel -> Text -> Ack -> ((Message,Envelope) -> IO ()) -> IO ConsumerTag
 consumeMsgs chan queue ack callback =
-  consumeMsgs' chan queue ack callback (\_ -> return ()) (FieldTable M.empty)
+    consumeMsgs' chan queue ack callback (\_ -> return ()) (FieldTable M.empty)
 
 -- | an extended version of @consumeMsgs@ that allows you to define a consumer cancellation callback and include arbitrary arguments.
 consumeMsgs' :: Channel -> Text -> Ack -> ((Message,Envelope) -> IO ()) -> (ConsumerTag -> IO ()) -> FieldTable -> IO ConsumerTag
 consumeMsgs' chan queue ack callback cancelCB args = do
     --generate a new consumer tag
-    newConsumerTag <- (fmap (T.pack . show)) $ modifyMVar (lastConsumerTag chan) $ \c -> return (c+1,c+1)
+    newConsumerTag <- fmap (T.pack . show) $ modifyMVar (lastConsumerTag chan) $ \c -> return (c+1,c+1)
 
     --register the consumer
     modifyMVar_ (consumers chan) $ return . M.insert newConsumerTag (callback, cancelCB)
@@ -423,10 +417,9 @@ consumeMsgs' chan queue ack callback cancelCB args = do
 -- | stops a consumer that was started with 'consumeMsgs'
 cancelConsumer :: Channel -> ConsumerTag -> IO ()
 cancelConsumer chan consumerTag = do
-    (SimpleMethod (Basic_cancel_ok _)) <- request chan $ (SimpleMethod (Basic_cancel
+    SimpleMethod (Basic_cancel_ok _) <- request chan $ SimpleMethod $ Basic_cancel
         (ShortString consumerTag) -- consumer_tag
         False -- nowait
-        ))
 
     --unregister the consumer
     modifyMVar_ (consumers chan) $ return . M.delete consumerTag
@@ -443,30 +436,31 @@ publishMsg chan exchange routingKey msg = publishMsg' chan exchange routingKey F
 publishMsg' :: Channel -> Text -> Text -> Bool -> Message -> IO (Maybe Int)
 publishMsg' chan exchange routingKey mandatory msg = do
     modifyMVar (nextPublishSeqNum chan) $ \nxtSeqNum -> do
-        writeAssembly chan (ContentMethod (Basic_publish
-            1 -- ticket; ignored by rabbitMQ
-            (ShortString exchange)
-            (ShortString routingKey)
-            mandatory -- mandatory; if true, the server might return the msg, which is currently not handled
-            False) --immediate; not customizable, as it is currently not supported anymore by RabbitMQ
-
-            (CHBasic
-            (fmap ShortString $ msgContentType msg)
-            (fmap ShortString $ msgContentEncoding msg)
-            (msgHeaders msg)
-            (fmap deliveryModeToInt $ msgDeliveryMode msg)
-            (msgPriority msg)
-            (fmap ShortString $ msgCorrelationID msg)
-            (fmap ShortString $ msgReplyTo msg)
-            (fmap ShortString $ msgExpiration msg)
-            (fmap ShortString $ msgID msg)
-            (msgTimestamp msg)
-            (fmap ShortString $ msgType msg)
-            (fmap ShortString $ msgUserID msg)
-            (fmap ShortString $ msgApplicationID msg)
-            (fmap ShortString $ msgClusterID msg)
+        writeAssembly chan $ ContentMethod
+            (Basic_publish
+                1 -- ticket; ignored by rabbitMQ
+                (ShortString exchange)
+                (ShortString routingKey)
+                mandatory -- mandatory; if true, the server might return the msg, which is currently not handled
+                False --immediate; not customizable, as it is currently not supported anymore by RabbitMQ
             )
-            (msgBody msg))
+            (CHBasic
+                (ShortString <$> msgContentType msg)
+                (ShortString <$> msgContentEncoding msg)
+                (msgHeaders msg)
+                (deliveryModeToInt <$> msgDeliveryMode msg)
+                (msgPriority msg)
+                (ShortString <$> msgCorrelationID msg)
+                (ShortString <$> msgReplyTo msg)
+                (ShortString <$> msgExpiration msg)
+                (ShortString <$> msgID msg)
+                (msgTimestamp msg)
+                (ShortString <$> msgType msg)
+                (ShortString <$> msgUserID msg)
+                (ShortString <$> msgApplicationID msg)
+                (ShortString <$> msgClusterID msg)
+            )
+            (msgBody msg)
 
         if nxtSeqNum /= 0
             then do
@@ -477,16 +471,15 @@ publishMsg' chan exchange routingKey mandatory msg = do
 -- | @getMsg chan ack queue@ gets a message from the specified queue. If @ack=='Ack'@, you have to call 'ackMsg' or 'ackEnv' for any message that you get, otherwise it might be delivered again in the future (by calling 'recoverMsgs')
 getMsg :: Channel -> Ack -> Text -> IO (Maybe (Message, Envelope))
 getMsg chan ack queue = do
-    ret <- request chan (SimpleMethod (Basic_get
+    ret <- request chan $ SimpleMethod $ Basic_get
         1 -- ticket
         (ShortString queue) -- queue
         (ackToBool ack) -- no_ack
-        ))
     case ret of
         ContentMethod (Basic_get_ok deliveryTag redelivered (ShortString exchange) (ShortString routingKey) _) properties body ->
-            return $ Just $ (msgFromContentHeaderProperties properties body,
-                             Envelope {envDeliveryTag = deliveryTag, envRedelivered = redelivered,
-                             envExchangeName = exchange, envRoutingKey = routingKey, envChannel = chan})
+            return $ Just (msgFromContentHeaderProperties properties body,
+                           Envelope {envDeliveryTag = deliveryTag, envRedelivered = redelivered,
+                                     envExchangeName = exchange, envRoutingKey = routingKey, envChannel = chan})
         _ -> return Nothing
 
 {- | @ackMsg chan deliveryTag multiple@ acknowledges one or more messages. A message MUST not be acknowledged more than once.
@@ -497,10 +490,9 @@ If @multiple==True@, and @deliveryTag==0@, tells the server to acknowledge all o
 -}
 ackMsg :: Channel -> LongLongInt -> Bool -> IO ()
 ackMsg chan deliveryTag multiple =
-    writeAssembly chan $ (SimpleMethod (Basic_ack
+    writeAssembly chan $ SimpleMethod $ Basic_ack
         deliveryTag -- delivery_tag
         multiple -- multiple
-        ))
 
 -- | Acknowledges a single message. This is a wrapper for 'ackMsg' in case you have the 'Envelope' at hand.
 ackEnv :: Envelope -> IO ()
@@ -514,11 +506,10 @@ If @requeue==True@, the server will try to requeue the message. If @requeue==Fal
 -}
 nackMsg :: Channel -> LongLongInt -> Bool -> Bool -> IO ()
 nackMsg chan deliveryTag multiple requeue =
-    writeAssembly chan $ (SimpleMethod (Basic_nack
+    writeAssembly chan $ SimpleMethod $ Basic_nack
         deliveryTag -- delivery_tag
         multiple -- multiple
         requeue -- requeue
-        ))
 
 -- | Reject a single message. This is a wrapper for 'nackMsg' in case you have the 'Envelope' at hand.
 nackEnv :: Envelope -> IO ()
@@ -529,10 +520,9 @@ nackEnv env = nackMsg (envChannel env) (envDeliveryTag env) False False
 -- NOTE: RabbitMQ 1.7 doesn't implement this command
 rejectMsg :: Channel -> LongLongInt -> Bool -> IO ()
 rejectMsg chan deliveryTag requeue =
-    writeAssembly chan $ (SimpleMethod (Basic_reject
+    writeAssembly chan $ SimpleMethod $ Basic_reject
         deliveryTag -- delivery_tag
         requeue -- requeue
-        ))
 
 -- | Reject a message. This is a wrapper for 'rejectMsg' in case you have the 'Envelope' at hand.
 rejectEnv :: Envelope
@@ -544,9 +534,8 @@ rejectEnv env requeue = rejectMsg (envChannel env) (envDeliveryTag env) requeue
 --If @requeue==False@, the message will be redelivered to the original recipient. If @requeue==True@, the server will attempt to requeue the message, potentially then delivering it to an alternative subscriber.
 recoverMsgs :: Channel -> Bool -> IO ()
 recoverMsgs chan requeue = do
-    SimpleMethod Basic_recover_ok <- request chan $ (SimpleMethod (Basic_recover
+    SimpleMethod Basic_recover_ok <- request chan $ SimpleMethod $ Basic_recover
         requeue -- requeue
-        ))
     return ()
 
 ------------------- TRANSACTIONS (TX) --------------------------
@@ -554,19 +543,19 @@ recoverMsgs chan requeue = do
 -- | This method sets the channel to use standard transactions.  The client must use this method at least once on a channel before using the Commit or Rollback methods.
 txSelect :: Channel -> IO ()
 txSelect chan = do
-    (SimpleMethod Tx_select_ok) <- request chan $ SimpleMethod Tx_select
+    SimpleMethod Tx_select_ok <- request chan $ SimpleMethod Tx_select
     return ()
 
 -- | This method commits all messages published and acknowledged in the current transaction.  A new transaction starts immediately after a commit.
 txCommit :: Channel -> IO ()
 txCommit chan = do
-    (SimpleMethod Tx_commit_ok) <- request chan $ SimpleMethod Tx_commit
+    SimpleMethod Tx_commit_ok <- request chan $ SimpleMethod Tx_commit
     return ()
 
 -- | This method abandons all messages published and acknowledged in the current transaction. A new transaction starts immediately after a rollback.
 txRollback :: Channel -> IO ()
 txRollback chan = do
-    (SimpleMethod Tx_rollback_ok) <- request chan $ SimpleMethod Tx_rollback
+    SimpleMethod Tx_rollback_ok <- request chan $ SimpleMethod Tx_rollback
     return ()
 
 
@@ -603,17 +592,17 @@ should be pattern-matched for the constructors @Complete (acked, nacked)@ and @P
 -}
 waitForConfirmsUntil :: Channel -> Int -> IO ConfirmationResult
 waitForConfirmsUntil chan timeout = do
-  delay <- registerDelay timeout
-  let partial = do
-        expired <- readTVar delay
-        if expired
-           then return . Partial =<< (,,)
-                <$> swapTVar (ackedSet chan) IntSet.empty
-                <*> swapTVar (nackedSet chan) IntSet.empty
-                <*> readTVar (unconfirmedSet chan)
-           else retry
-      complete = return . Complete =<< waitForAllConfirms chan
-  atomically $ complete `orElse` partial
+    delay <- registerDelay timeout
+    let partial = do
+            expired <- readTVar delay
+            if expired
+                then Partial <$> ((,,)
+                    <$> swapTVar (ackedSet chan) IntSet.empty
+                    <*> swapTVar (nackedSet chan) IntSet.empty
+                    <*> readTVar (unconfirmedSet chan))
+                else retry
+        complete = Complete <$> waitForAllConfirms chan
+    atomically $ complete `orElse` partial
 
 {- | Adds a handler which will be invoked each time the @Channel@ receives a confirmation from the broker.
 The parameters passed to the the handler are the @deliveryTag@ for the message being confirmed, a flag
@@ -639,7 +628,7 @@ addConfirmationListener chan handler =
     -}
 flow :: Channel -> Bool -> IO ()
 flow chan active = do
-    (SimpleMethod (Channel_flow_ok _)) <- request chan $ SimpleMethod (Channel_flow active)
+    SimpleMethod (Channel_flow_ok _) <- request chan $ SimpleMethod (Channel_flow active)
     return ()
 
 -- | Constructs default connection options with the following settings :
@@ -679,7 +668,7 @@ plain :: Text -> Text -> SASLMechanism
 plain loginName loginPassword = SASLMechanism "PLAIN" initialResponse Nothing
   where
     nul = '\0'
-    initialResponse = E.encodeUtf8 $ (T.cons nul loginName) `T.append` (T.cons nul loginPassword)
+    initialResponse = E.encodeUtf8 $ T.cons nul loginName `T.append` T.cons nul loginPassword
 
 -- | The @AMQPLAIN@ SASL mechanism. See <http://www.rabbitmq.com/authentication.html>.
 amqplain :: Text -> Text -> SASLMechanism
@@ -693,7 +682,7 @@ rabbitCRdemo :: Text -> Text -> SASLMechanism
 rabbitCRdemo loginName loginPassword = SASLMechanism "RABBIT-CR-DEMO" initialResponse (Just $ const challengeResponse)
   where
     initialResponse = E.encodeUtf8 loginName
-    challengeResponse = return $ (E.encodeUtf8 "My password is ") `BS.append` (E.encodeUtf8 loginPassword)
+    challengeResponse = return $ E.encodeUtf8 "My password is " `BS.append` E.encodeUtf8 loginPassword
 
 -- | @qos chan prefetchSize prefetchCount global@ limits the amount of data the server
 -- delivers before requiring acknowledgements. @prefetchSize@ specifies the
@@ -705,11 +694,10 @@ rabbitCRdemo loginName loginPassword = SASLMechanism "RABBIT-CR-DEMO" initialRes
 -- NOTE: RabbitMQ does not implement prefetchSize and will throw an exception if it doesn't equal 0.
 qos :: Channel -> Word32 -> Word16 -> Bool -> IO ()
 qos chan prefetchSize prefetchCount global = do
-    (SimpleMethod Basic_qos_ok) <- request chan (SimpleMethod (Basic_qos
+    SimpleMethod Basic_qos_ok <- request chan $ SimpleMethod $ Basic_qos
         prefetchSize
         prefetchCount
         global
-        ))
     return ()
 
 -- | Parses amqp standard URI of the form @amqp://user:password@host:port/vhost@ and returns a @ConnectionOpts@ for use with @openConnection''@
@@ -717,7 +705,7 @@ qos chan prefetchSize prefetchCount global = do
 fromURI :: String -> ConnectionOpts
 fromURI uri = defaultConnectionOpts {
     coServers     = hostPorts',
-    coVHost       = (T.pack vhost),
+    coVHost       = T.pack vhost,
     coAuth        = [plain (T.pack uid) (T.pack pw)],
     coTLSSettings = if tls then Just TLSTrusted else Nothing
   }

@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns, CPP, OverloadedStrings, ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns, CPP, OverloadedStrings, ScopedTypeVariables, LambdaCase #-}
 module Network.AMQP.Internal where
 
 import Paths_amqp(version)
@@ -53,41 +53,37 @@ intToDeliveryMode n = error ("Unknown delivery mode int: " ++ show n)
 
 -- | An AMQP message
 data Message = Message {
-                msgBody :: BL.ByteString, -- ^ the content of your message
-                msgDeliveryMode :: Maybe DeliveryMode, -- ^ see 'DeliveryMode'
-                msgTimestamp :: Maybe Timestamp, -- ^ use in any way you like; this doesn't affect the way the message is handled
-                msgID :: Maybe Text, -- ^ use in any way you like; this doesn't affect the way the message is handled
-                msgType :: Maybe Text, -- ^ use in any way you like; this doesn't affect the way the message is handled
-                msgUserID :: Maybe Text,
-                msgApplicationID :: Maybe Text,
-                msgClusterID :: Maybe Text,
-                msgContentType :: Maybe Text,
-                msgContentEncoding :: Maybe Text,
-                msgReplyTo :: Maybe Text,
-                msgPriority :: Maybe Octet,
-                msgCorrelationID :: Maybe Text,
-                msgExpiration :: Maybe Text,
-                msgHeaders :: Maybe FieldTable
-                }
-    deriving (Eq, Ord, Read, Show)
+    msgBody :: BL.ByteString, -- ^ the content of your message
+    msgDeliveryMode :: Maybe DeliveryMode, -- ^ see 'DeliveryMode'
+    msgTimestamp :: Maybe Timestamp, -- ^ use in any way you like; this doesn't affect the way the message is handled
+    msgID :: Maybe Text, -- ^ use in any way you like; this doesn't affect the way the message is handled
+    msgType :: Maybe Text, -- ^ use in any way you like; this doesn't affect the way the message is handled
+    msgUserID :: Maybe Text,
+    msgApplicationID :: Maybe Text,
+    msgClusterID :: Maybe Text,
+    msgContentType :: Maybe Text,
+    msgContentEncoding :: Maybe Text,
+    msgReplyTo :: Maybe Text,
+    msgPriority :: Maybe Octet,
+    msgCorrelationID :: Maybe Text,
+    msgExpiration :: Maybe Text,
+    msgHeaders :: Maybe FieldTable
+} deriving (Eq, Ord, Read, Show)
 
 -- | contains meta-information of a delivered message (through 'getMsg' or 'consumeMsgs')
-data Envelope = Envelope
-              {
-                envDeliveryTag :: LongLongInt,
-                envRedelivered :: Bool,
-                envExchangeName :: Text,
-                envRoutingKey :: Text,
-                envChannel :: Channel
-              }
+data Envelope = Envelope {
+    envDeliveryTag :: LongLongInt,
+    envRedelivered :: Bool,
+    envExchangeName :: Text,
+    envRoutingKey :: Text,
+    envChannel :: Channel
+}
 
-data PublishError = PublishError
-                  {
-                    errReplyCode :: ReturnReplyCode,
-                    errExchange :: Maybe Text,
-                    errRoutingKey :: Text
-                  }
-    deriving (Eq, Read, Show)
+data PublishError = PublishError {
+    errReplyCode :: ReturnReplyCode,
+    errExchange :: Maybe Text,
+    errRoutingKey :: Text
+} deriving (Eq, Read, Show)
 
 data ReturnReplyCode = Unroutable Text
                      | NoConsumers Text
@@ -126,7 +122,7 @@ collectContent chan = do
     collect x | x <= 0 = return []
     collect x = do
         (ContentBodyPayload payload) <- readChan chan
-        r <- collect (x - (BL.length payload))
+        r <- collect (x - BL.length payload)
         return $ payload : r
 
 ------------ CONNECTION -------------------
@@ -141,32 +137,33 @@ Outgoing Data: Application -> Socket
 -}
 
 data Connection = Connection {
-                    connHandle :: Conn.Connection,
-                    connChanAllocator :: ChannelAllocator,
-                    connChannels :: MVar (IM.IntMap (Channel, ThreadId)), -- open channels (channelID => (Channel, ChannelThread))
-                    connMaxFrameSize :: Int, --negotiated maximum frame size
-                    connClosed :: MVar (Maybe (CloseType, String)),
-                    connClosedLock :: MVar (), -- used by closeConnection to block until connection-close handshake is complete
-                    connWriteLock :: MVar (), -- to ensure atomic writes to the socket
-                    connClosedHandlers :: MVar [IO ()],
-                    connBlockedHandlers :: MVar [(Text -> IO (), IO ())],
-                    connLastReceived :: MVar Int64, -- the timestamp from a monotonic clock when the last frame was received
-                    connLastSent :: MVar Int64, -- the timestamp from a monotonic clock when the last frame was written
-                    connServerProperties :: FieldTable -- the server properties sent in Connection_start
-                }
+    connHandle :: Conn.Connection,
+    connChanAllocator :: ChannelAllocator,
+    connChannels :: MVar (IM.IntMap (Channel, ThreadId)), -- open channels (channelID => (Channel, ChannelThread))
+    connMaxFrameSize :: Int, --negotiated maximum frame size
+    connClosed :: MVar (Maybe (CloseType, String)),
+    connClosedLock :: MVar (), -- used by closeConnection to block until connection-close handshake is complete
+    connWriteLock :: MVar (), -- to ensure atomic writes to the socket
+    connClosedHandlers :: MVar [IO ()],
+    connBlockedHandlers :: MVar [(Text -> IO (), IO ())],
+    connLastReceived :: MVar Int64, -- the timestamp from a monotonic clock when the last frame was received
+    connLastSent :: MVar Int64, -- the timestamp from a monotonic clock when the last frame was written
+    connServerProperties :: FieldTable -- the server properties sent in Connection_start
+}
 
 -- | Represents the parameters to connect to a broker or a cluster of brokers.
 -- See 'defaultConnectionOpts'.
 data ConnectionOpts = ConnectionOpts {
-                            coServers :: ![(String, PortNumber)], -- ^ A list of host-port pairs. Useful in a clustered setup to connect to the first available host.
-                            coVHost :: !Text, -- ^ The VHost to connect to.
-                            coAuth :: ![SASLMechanism], -- ^ The 'SASLMechanism's to use for authenticating with the broker.
-                            coMaxFrameSize :: !(Maybe Word32), -- ^ The maximum frame size to be used. If not specified, no limit is assumed.
-                            coHeartbeatDelay :: !(Maybe Word16), -- ^ The delay in seconds, after which the client expects a heartbeat frame from the broker. If 'Nothing', the value suggested by the broker is used. Use @Just 0@ to disable the heartbeat mechnism.
-                            coMaxChannel :: !(Maybe Word16), -- ^ The maximum number of channels the client will use.
-                            coTLSSettings :: Maybe TLSSettings, -- ^ Whether or not to connect to servers using TLS. See http://www.rabbitmq.com/ssl.html for details.
-                            coName :: !(Maybe Text) -- ^ optional connection name (will be displayed in the RabbitMQ web interface)
-                        }
+    coServers :: ![(String, PortNumber)], -- ^ A list of host-port pairs. Useful in a clustered setup to connect to the first available host.
+    coVHost :: !Text, -- ^ The VHost to connect to.
+    coAuth :: ![SASLMechanism], -- ^ The 'SASLMechanism's to use for authenticating with the broker.
+    coMaxFrameSize :: !(Maybe Word32), -- ^ The maximum frame size to be used. If not specified, no limit is assumed.
+    coHeartbeatDelay :: !(Maybe Word16), -- ^ The delay in seconds, after which the client expects a heartbeat frame from the broker. If 'Nothing', the value suggested by the broker is used. Use @Just 0@ to disable the heartbeat mechnism.
+    coMaxChannel :: !(Maybe Word16), -- ^ The maximum number of channels the client will use.
+    coTLSSettings :: Maybe TLSSettings, -- ^ Whether or not to connect to servers using TLS. See http://www.rabbitmq.com/ssl.html for details.
+    coName :: !(Maybe Text) -- ^ optional connection name (will be displayed in the RabbitMQ web interface)
+}
+
 -- | Represents the kind of TLS connection to establish.
 data TLSSettings =
     TLSTrusted   -- ^ Require trusted certificates (Recommended).
@@ -175,18 +172,18 @@ data TLSSettings =
 
 connectionTLSSettings :: TLSSettings -> Maybe Conn.TLSSettings
 connectionTLSSettings tlsSettings =
-  Just $ case tlsSettings of
-    TLSTrusted -> Conn.TLSSettingsSimple False False False
-    TLSUntrusted -> Conn.TLSSettingsSimple True False False
-    TLSCustom x -> x
+    Just $ case tlsSettings of
+        TLSTrusted -> Conn.TLSSettingsSimple False False False
+        TLSUntrusted -> Conn.TLSSettingsSimple True False False
+        TLSCustom x -> x
 
 -- | A 'SASLMechanism' is described by its name ('saslName'), its initial response ('saslInitialResponse'), and an optional function ('saslChallengeFunc') that
 -- transforms a security challenge provided by the server into response, which is then sent back to the server for verification.
 data SASLMechanism = SASLMechanism {
-                        saslName :: !Text, -- ^ mechanism name
-                        saslInitialResponse :: !BS.ByteString, -- ^ initial response
-                        saslChallengeFunc :: !(Maybe (BS.ByteString -> IO BS.ByteString)) -- ^ challenge processing function
-                    }
+    saslName :: !Text, -- ^ mechanism name
+    saslInitialResponse :: !BS.ByteString, -- ^ initial response
+    saslChallengeFunc :: !(Maybe (BS.ByteString -> IO BS.ByteString)) -- ^ challenge processing function
+}
 
 -- | reads incoming frames from socket and forwards them to the opened channels
 connectionReceiver :: Connection -> IO ()
@@ -199,10 +196,10 @@ connectionReceiver conn = do
         (\(e :: CE.IOException) -> myThreadId >>= killConnection conn Abnormal (CE.toException e))
     connectionReceiver conn
   where
-
     closedByUserEx = ConnectionClosedException Normal "closed by user"
 
-    forwardToChannel 0 (MethodPayload Connection_close_ok) =  myThreadId >>= killConnection conn Normal (CE.toException closedByUserEx)
+    forwardToChannel 0 (MethodPayload Connection_close_ok) =
+        myThreadId >>= killConnection conn Normal (CE.toException closedByUserEx)
     forwardToChannel 0 (MethodPayload (Connection_close _ (ShortString errorMsg) _ _)) = do
         writeFrame (connHandle conn) $ Frame 0 $ MethodPayload Connection_close_ok
         myThreadId >>= killConnection conn Abnormal (CE.toException . ConnectionClosedException Abnormal . T.unpack $ errorMsg)
@@ -233,12 +230,12 @@ openConnection'' connOpts = withSocketsDo $ do
     handle <- connect [] $ coServers connOpts
     (maxFrameSize, maxChannel, heartbeatTimeout, serverProps) <- CE.handle (\(_ :: CE.IOException) -> CE.throwIO $ ConnectionClosedException Abnormal "Handshake failed. Please check the RabbitMQ logs for more information") $ do
         Conn.connectionPut handle $ BS.append (BC.pack "AMQP")
-                (BS.pack [
-                          1
-                        , 1 --TCP/IP
-                        , 0 --Major Version
-                        , 9 --Minor Version
-                       ])
+            (BS.pack [
+                      1
+                    , 1 --TCP/IP
+                    , 0 --Major Version
+                    , 9 --Minor Version
+                    ])
 
         -- S: connection.start
         Frame 0 (MethodPayload (Connection_start _ _ serverProps (LongString serverMechanisms) _)) <- readFrame handle
@@ -283,33 +280,33 @@ openConnection'' connOpts = withSocketsDo $ do
 
     --spawn the connectionReceiver
     connThread <- forkFinally' (connectionReceiver conn) $ \res -> do
-                -- try closing socket
-                CE.catch (Conn.connectionClose handle) (\(_ :: CE.SomeException) -> return ())
+        -- try closing socket
+        CE.catch (Conn.connectionClose handle) (\(_ :: CE.SomeException) -> return ())
 
-                -- mark as closed
-                modifyMVar_ cClosed $ return . Just . fromMaybe (Abnormal, "unknown reason")
+        -- mark as closed
+        modifyMVar_ cClosed $ return . Just . fromMaybe (Abnormal, "unknown reason")
 
-                -- kill all channel-threads, making sure the channel threads will
-                -- be killed taking into account the overall state of the
-                -- connection: if the thread died for an unexpected exception,
-                -- inform the channel threads downstream accordingly. Otherwise
-                -- just use a normal 'killThread' finaliser.
-                let finaliser = ChanThreadKilledException $ case res of
-                        Left ex -> ex
-                        Right _ -> CE.toException CE.ThreadKilled
-                modifyMVar_ cChannels $ \x -> do
-                    mapM_ (flip CE.throwTo finaliser . snd) $ IM.elems x
-                    return IM.empty
+        -- kill all channel-threads, making sure the channel threads will
+        -- be killed taking into account the overall state of the
+        -- connection: if the thread died for an unexpected exception,
+        -- inform the channel threads downstream accordingly. Otherwise
+        -- just use a normal 'killThread' finaliser.
+        let finaliser = ChanThreadKilledException $ case res of
+                Left ex -> ex
+                Right _ -> CE.toException CE.ThreadKilled
+        modifyMVar_ cChannels $ \x -> do
+            mapM_ (flip CE.throwTo finaliser . snd) $ IM.elems x
+            return IM.empty
 
-                -- mark connection as closed, so all pending calls to 'closeConnection' can now return
-                void $ tryPutMVar ccl ()
+        -- mark connection as closed, so all pending calls to 'closeConnection' can now return
+        void $ tryPutMVar ccl ()
 
-                -- notify connection-close-handlers
-                withMVar cClosedHandlers sequence_
+        -- notify connection-close-handlers
+        withMVar cClosedHandlers sequence_
 
     case heartbeatTimeout of
         Nothing      -> return ()
-        Just timeout ->  do
+        Just timeout -> do
             heartbeatThread <- watchHeartbeats conn (fromIntegral timeout) connThread
             addConnectionClosedHandler conn True (killThread heartbeatThread)
 
@@ -317,17 +314,15 @@ openConnection'' connOpts = withSocketsDo $ do
   where
     connect excs ((host, port) : rest) = do
         ctx <- Conn.initConnectionContext
-        result <- CE.try (Conn.connectTo ctx $ Conn.ConnectionParams
-                              { Conn.connectionHostname  = host
-                              , Conn.connectionPort      = port
-                              , Conn.connectionUseSecure = tlsSettings
-                              , Conn.connectionUseSocks  = Nothing
-                              })
-        either
-            (\(ex :: CE.SomeException) -> do
-                connect (ex:excs) rest)
-            (return)
-            result
+        result <- CE.try $ Conn.connectTo ctx $ Conn.ConnectionParams
+                    { Conn.connectionHostname  = host
+                    , Conn.connectionPort      = port
+                    , Conn.connectionUseSecure = tlsSettings
+                    , Conn.connectionUseSocks  = Nothing
+                    }
+        either (\(ex :: CE.SomeException) -> connect (ex:excs) rest)
+               return
+               result
     connect excs [] = CE.throwIO $ ConnectionClosedException Abnormal $ "Could not connect to any of the provided brokers: " ++ show (zip (coServers connOpts) (reverse excs))
     tlsSettings = maybe Nothing connectionTLSSettings (coTLSSettings connOpts)
     selectSASLMechanism handle serverMechanisms =
@@ -338,17 +333,22 @@ openConnection'' connOpts = withSocketsDo $ do
         in abortIfNothing maybeSasl handle
             ("None of the provided SASL mechanisms "++show clientSaslList++" is supported by the server "++show serverSaslList++".")
 
-    start_ok sasl = (Frame 0 (MethodPayload (Connection_start_ok clientProperties
-                                             (ShortString $ saslName sasl)
-                                             (LongString $ saslInitialResponse sasl)
-                                             (ShortString "en_US")) ))
-                    where clientProperties = FieldTable $ M.fromList $ [ ("platform", FVString "Haskell")
-                                                                       , ("version" , FVString . E.encodeUtf8 . T.pack $ showVersion version)
-                                                                       , ("capabilities", FVFieldTable clientCapabilities)
-                                                                       ] ++ maybe [] (\x -> [("connection_name", FVString $ E.encodeUtf8 x)]) (coName connOpts)
+    start_ok sasl = Frame 0 $ MethodPayload $ Connection_start_ok
+                        clientProperties
+                        (ShortString $ saslName sasl)
+                        (LongString $ saslInitialResponse sasl)
+                        (ShortString "en_US")
+      where
+        clientProperties = FieldTable $ M.fromList $ [
+            ("platform", FVString "Haskell"),
+            ("version" , FVString . E.encodeUtf8 . T.pack $ showVersion version),
+            ("capabilities", FVFieldTable clientCapabilities)
+          ] ++ maybe [] (\x -> [("connection_name", FVString $ E.encodeUtf8 x)]) (coName connOpts)
 
-                          clientCapabilities = FieldTable $ M.fromList $ [ ("consumer_cancel_notify", FVBool True),
-                                                                           ("connection.blocked", FVBool True) ]
+        clientCapabilities = FieldTable $ M.fromList [
+            ("consumer_cancel_notify", FVBool True),
+            ("connection.blocked", FVBool True)
+          ]
 
     handleSecureUntilTune handle sasl = do
         tuneOrSecure <- readFrame handle
@@ -360,13 +360,13 @@ openConnection'' connOpts = withSocketsDo $ do
                 writeFrame handle (Frame 0 (MethodPayload (Connection_secure_ok (LongString challengeResponse))))
                 handleSecureUntilTune handle sasl
 
-            tune@(Frame 0 (MethodPayload (Connection_tune _ _ _))) -> return tune
+            tune@(Frame 0 (MethodPayload Connection_tune{})) -> return tune
             x -> error $ "handleSecureUntilTune fail. received message: "++show x
 
-    open = (Frame 0 (MethodPayload (Connection_open
+    open = Frame 0 $ MethodPayload $ Connection_open
         (ShortString $ coVHost connOpts)
         (ShortString $ T.pack "") -- capabilities; deprecated in 0-9-1
-        True))) -- insist; deprecated in 0-9-1
+        True -- insist; deprecated in 0-9-1
 
     abortHandshake handle msg = do
         Conn.connectionClose handle
@@ -383,21 +383,20 @@ watchHeartbeats conn timeout connThread = scheduleAtFixedRate rate $ do
     checkReceiveTimeout
   where
     rate = timeout * 1000 * 250 -- timeout / 4 in µs
-    receiveTimeout = (fromIntegral rate) * 4 * 2 -- 2*timeout in µs
-    sendTimeout = (fromIntegral rate) * 2 -- timeout/2 in µs
+    receiveTimeout = fromIntegral rate * 4 * 2 -- 2*timeout in µs
+    sendTimeout = fromIntegral rate * 2 -- timeout/2 in µs
 
     skippedBeatEx = ConnectionClosedException Abnormal "killed connection after missing 2 consecutive heartbeats"
 
-    checkReceiveTimeout = doCheck (connLastReceived conn) receiveTimeout
-        (killConnection conn Abnormal (CE.toException skippedBeatEx) connThread)
+    checkReceiveTimeout = doCheck (connLastReceived conn) receiveTimeout $
+        killConnection conn Abnormal (CE.toException skippedBeatEx) connThread
 
-    checkSendTimeout = doCheck (connLastSent conn) sendTimeout
-        (writeFrame (connHandle conn) (Frame 0 HeartbeatPayload))
+    checkSendTimeout = doCheck (connLastSent conn) sendTimeout $
+        writeFrame (connHandle conn) (Frame 0 HeartbeatPayload)
 
     doCheck var timeout_µs action = withMVar var $ \lastFrameTime -> do
         time <- getTimestamp
-        when (time >= lastFrameTime + timeout_µs) $ do
-            action
+        when (time >= lastFrameTime + timeout_µs) action
 
 updateLastSent :: Connection -> IO ()
 updateLastSent conn = modifyMVar_ (connLastSent conn) (const getTimestamp)
@@ -417,14 +416,13 @@ killConnection conn closeType ex connThread = do
 closeConnection :: Connection -> IO ()
 closeConnection c = do
     CE.catch (
-        withMVar (connWriteLock c) $ \_ -> writeFrame (connHandle c) $ (Frame 0 (MethodPayload (Connection_close
+        withMVar (connWriteLock c) $ \_ -> writeFrame (connHandle c) $ Frame 0 $ MethodPayload $ Connection_close
             --TODO: set these values
             0 -- reply_code
             (ShortString "") -- reply_text
             0 -- class_id
             0 -- method_id
-            )))
-            )
+        )
         (\ (_ :: CE.IOException) ->
             --do nothing if connection is already closed
             return ()
@@ -441,13 +439,12 @@ getServerProperties = return . connServerProperties
 -- | @addConnectionClosedHandler conn ifClosed handler@ adds a @handler@ that will be called after the connection is closed (either by calling @closeConnection@ or by an exception). If the @ifClosed@ parameter is True and the connection is already closed, the handler will be called immediately. If @ifClosed == False@ and the connection is already closed, the handler will never be called
 addConnectionClosedHandler :: Connection -> Bool -> IO () -> IO ()
 addConnectionClosedHandler conn ifClosed handler = do
-    withMVar (connClosed conn) $ \cc ->
-        case cc of
-            -- connection is already closed, so call the handler directly
-            Just _ | ifClosed == True -> handler
+    withMVar (connClosed conn) $ \case
+        -- connection is already closed, so call the handler directly
+        Just _ | ifClosed -> handler
 
-            -- otherwise add it to the list
-            _ -> modifyMVar_ (connClosedHandlers conn) $ \old -> return $ handler:old
+        -- otherwise add it to the list
+        _ -> modifyMVar_ (connClosedHandlers conn) $ \old -> return $ handler:old
 
 -- | @addConnectionBlockedHandler conn blockedHandler unblockedHandler@ adds handlers that will be called
 -- when a connection gets blocked/unlocked due to server resource constraints.
@@ -489,7 +486,7 @@ connectionGetExact conn x = loop BS.empty 0
           | y == x = return bs
           | otherwise = do
             next <- Conn.connectionGet conn (x - y)
-            loop (BS.append bs next) (y + (BS.length next))
+            loop (BS.append bs next) (y + BS.length next)
 
 writeFrame :: Conn.Connection -> Frame -> IO ()
 writeFrame handle f = do
@@ -500,25 +497,25 @@ writeFrame handle f = do
 {- | A connection to an AMQP server is made up of separate channels. It is recommended to use a separate channel for each thread in your application that talks to the AMQP server (but you don't have to as channels are thread-safe)
 -}
 data Channel = Channel {
-                    connection :: Connection,
-                    inQueue :: Chan FramePayload, --incoming frames (from Connection)
-                    outstandingResponses :: MVar (Seq.Seq (MVar Assembly)), -- for every request an MVar is stored here waiting for the response
-                    channelID :: Word16,
-                    lastConsumerTag :: MVar Int,
+    connection :: Connection,
+    inQueue :: Chan FramePayload, -- incoming frames (from Connection)
+    outstandingResponses :: MVar (Seq.Seq (MVar Assembly)), -- for every request an MVar is stored here waiting for the response
+    channelID :: Word16,
+    lastConsumerTag :: MVar Int,
 
-                    nextPublishSeqNum :: MVar Int,
-                    unconfirmedSet :: TVar IntSet.IntSet,
-                    ackedSet :: TVar IntSet.IntSet,  --delivery tags
-                    nackedSet :: TVar IntSet.IntSet, --accumulate here.
+    nextPublishSeqNum :: MVar Int,
+    unconfirmedSet :: TVar IntSet.IntSet,
+    ackedSet :: TVar IntSet.IntSet,  -- delivery tags
+    nackedSet :: TVar IntSet.IntSet, -- accumulate here.
 
-                    chanActive :: Lock, -- used for flow-control. if lock is closed, no content methods will be sent
-                    chanClosed :: MVar (Maybe (CloseType, String)),
-                    consumers :: MVar (M.Map Text ((Message, Envelope) -> IO (),    -- who is consumer of a queue? (consumerTag => callback)
-                                                   (ConsumerTag -> IO ()))),        -- cancellation notification callback
-                    returnListeners :: MVar ([(Message, PublishError) -> IO ()]),
-                    confirmListeners :: MVar ([(Word64, Bool, AckType) -> IO ()]),
-                    chanExceptionHandlers :: MVar [CE.SomeException -> IO ()]
-                }
+    chanActive :: Lock, -- used for flow-control. if lock is closed, no content methods will be sent
+    chanClosed :: MVar (Maybe (CloseType, String)),
+    consumers :: MVar (M.Map Text ((Message, Envelope) -> IO (), -- who is consumer of a queue? (consumerTag => callback)
+                                   ConsumerTag -> IO ())),    -- cancellation notification callback
+    returnListeners :: MVar [(Message, PublishError) -> IO ()],
+    confirmListeners :: MVar [(Word64, Bool, AckType) -> IO ()],
+    chanExceptionHandlers :: MVar [CE.SomeException -> IO ()]
+}
 
 -- | Thrown in the channel thread when the connection gets closed.
 -- When handling exceptions in a subscription callback, make sure to re-throw this so the channel thread can be stopped.
@@ -567,12 +564,12 @@ channelReceiver chan = do
     channelReceiver chan
   where
     isResponse :: Assembly -> Bool
-    isResponse (ContentMethod (Basic_deliver _ _ _ _ _) _ _) = False
-    isResponse (ContentMethod (Basic_return _ _ _ _) _ _) = False
+    isResponse (ContentMethod Basic_deliver{} _ _) = False
+    isResponse (ContentMethod Basic_return{} _ _) = False
     isResponse (SimpleMethod (Channel_flow _)) = False
-    isResponse (SimpleMethod (Channel_close _ _ _ _)) = False
+    isResponse (SimpleMethod Channel_close{}) = False
     isResponse (SimpleMethod (Basic_ack _ _)) = False
-    isResponse (SimpleMethod (Basic_nack _ _ _)) = False
+    isResponse (SimpleMethod Basic_nack{}) = False
     isResponse (SimpleMethod (Basic_cancel _ _)) = False
     isResponse _ = True
 
@@ -587,25 +584,22 @@ channelReceiver chan = do
                     let env = Envelope {envDeliveryTag = deliveryTag, envRedelivered = redelivered,
                                     envExchangeName = exchange, envRoutingKey = routingKey, envChannel = chan}
 
-                    CE.catches (subscriber (msg, env))
-                        [
-                          CE.Handler (\(e::ChanThreadKilledException) -> CE.throwIO $ cause e),
-                          CE.Handler (\(e::CE.SomeException) -> hPutStrLn stderr $ "AMQP callback threw exception: " ++ show e)
-                        ]
+                    CE.catches (subscriber (msg, env)) [
+                        CE.Handler (\(e::ChanThreadKilledException) -> CE.throwIO $ cause e),
+                        CE.Handler (\(e::CE.SomeException) -> hPutStrLn stderr $ "AMQP callback threw exception: " ++ show e)
+                      ]
                 Nothing ->
                     -- got a message, but have no registered subscriber; so drop it
                     return ()
             )
     handleAsync (SimpleMethod (Channel_close _ (ShortString errorMsg) _ _)) = do
-      CE.catch (
-        writeAssembly' chan (SimpleMethod (Channel_close_ok))
-        )
-        (\ (_ :: CE.IOException) ->
-              --do nothing if connection is already closed
+        CE.catch (writeAssembly' chan (SimpleMethod Channel_close_ok))
+            (\ (_ :: CE.IOException) ->
+              -- do nothing if connection is already closed
               return ()
-        )
-      closeChannel' chan Abnormal errorMsg
-      myThreadId >>= flip CE.throwTo (ChannelClosedException Abnormal . T.unpack $ errorMsg)
+            )
+        closeChannel' chan Abnormal errorMsg
+        myThreadId >>= flip CE.throwTo (ChannelClosedException Abnormal . T.unpack $ errorMsg)
     handleAsync (SimpleMethod (Channel_flow active)) = do
         if active
             then openLock $ chanActive chan
@@ -613,12 +607,12 @@ channelReceiver chan = do
         -- in theory we should respond with flow_ok but rabbitMQ 1.7 ignores that, so it doesn't matter
         return ()
     --Basic.return
-    handleAsync (ContentMethod basicReturn@(Basic_return _ _ _ _) props body) = do
+    handleAsync (ContentMethod basicReturn@Basic_return{} props body) = do
         let msg      = msgFromContentHeaderProperties props body
             pubError = basicReturnToPublishError basicReturn
         withMVar (returnListeners chan) $ \listeners ->
             forM_ listeners $ \l -> CE.catch (l (msg, pubError)) $ \(ex :: CE.SomeException) ->
-                hPutStrLn stderr $ "return listener on channel ["++(show $ channelID chan)++"] handling error ["++show pubError++"] threw exception: "++show ex
+                hPutStrLn stderr $ "return listener on channel ["++show (channelID chan)++"] handling error ["++show pubError++"] threw exception: "++show ex
     handleAsync (SimpleMethod (Basic_ack deliveryTag multiple)) = handleConfirm deliveryTag multiple BasicAck
     handleAsync (SimpleMethod (Basic_nack deliveryTag multiple _)) = handleConfirm deliveryTag multiple BasicNack
     handleAsync (SimpleMethod (Basic_cancel consumerTag _)) = handleCancel consumerTag
@@ -627,30 +621,30 @@ channelReceiver chan = do
     handleConfirm deliveryTag multiple k = do
         withMVar (confirmListeners chan) $ \listeners ->
             forM_ listeners $ \l -> CE.catch (l (deliveryTag, multiple, k)) $ \(ex :: CE.SomeException) ->
-                hPutStrLn stderr $ "confirm listener on channel ["++(show $ channelID chan)++"] handling method "++(show k)++" threw exception: "++ show ex
+                hPutStrLn stderr $ "confirm listener on channel ["++show (channelID chan)++"] handling method "++show k++" threw exception: "++show ex
 
         let seqNum = fromIntegral deliveryTag
         let targetSet = case k of
-              BasicAck  -> (ackedSet chan)
-              BasicNack -> (nackedSet chan)
+              BasicAck  -> ackedSet chan
+              BasicNack -> nackedSet chan
         atomically $ do
-          unconfSet <- readTVar (unconfirmedSet chan)
-          let (merge, pending) = if multiple
-                                     then (IntSet.union confs, pending')
-                                     else (IntSet.insert seqNum, IntSet.delete seqNum unconfSet)
-                                  where
-                                    confs = fst parts
-                                    pending' = snd parts
-                                    parts = IntSet.partition (\n -> n <= seqNum) unconfSet
-          modifyTVar' targetSet (\ts -> merge ts)
-          writeTVar (unconfirmedSet chan) pending
+            unconfSet <- readTVar (unconfirmedSet chan)
+            let (merge, pending) = if multiple
+                                       then (IntSet.union confs, pending')
+                                       else (IntSet.insert seqNum, IntSet.delete seqNum unconfSet)
+                                    where
+                                      confs = fst parts
+                                      pending' = snd parts
+                                      parts = IntSet.partition (\n -> n <= seqNum) unconfSet
+            modifyTVar' targetSet (\ts -> merge ts)
+            writeTVar (unconfirmedSet chan) pending
 
     handleCancel (ShortString consumerTag) =
         withMVar (consumers chan) (\s -> do
             case M.lookup consumerTag s of
                 Just (_, cancelCB) ->
                     CE.catch (cancelCB consumerTag) $ \(ex :: CE.SomeException) ->
-                        hPutStrLn stderr $ "consumer cancellation listener "++(show consumerTag)++" on channel ["++(show $ channelID chan)++"] threw exception: "++ show ex
+                        hPutStrLn stderr $ "consumer cancellation listener "++show consumerTag++" on channel ["++show (channelID chan)++"] threw exception: "++ show ex
                 Nothing ->
                     -- got a cancellation notification, but have no registered subscriber; so drop it
                     return ()
@@ -661,7 +655,7 @@ channelReceiver chan = do
                 312 -> Unroutable errText
                 313 -> NoConsumers errText
                 404 -> NotFound errText
-                num -> error $ "unexpected return error code: " ++ (show num)
+                num -> error $ "unexpected return error code: " ++show num
             pubError = PublishError replyError (Just exchange) routingKey
         in pubError
     basicReturnToPublishError x = error $ "basicReturnToPublishError fail: "++show x
@@ -684,7 +678,7 @@ closeChannel' c closeType reason = do
             then do
                 modifyMVar_ (connChannels $ connection c) $ \old -> do
                     ret <- freeChannel (connChanAllocator $ connection c) $ fromIntegral $ channelID c
-                    when (not ret) $ hPutStrLn stderr "closeChannel error: channel already freed"
+                    unless ret $ hPutStrLn stderr "closeChannel error: channel already freed"
                     return $ IM.delete (fromIntegral $ channelID c) old
 
                 void $ killLock $ chanActive c
@@ -717,25 +711,25 @@ openChannel c = do
     cnfListeners <- newMVar []
     handlers <- newMVar []
 
-    --add new channel to connection's channel map
+    -- add new channel to connection's channel map
     newChannel <- modifyMVar (connChannels c) $ \mp -> do
         newChannelID <- allocateChannel (connChanAllocator c)
         let newChannel = Channel c newInQueue outRes (fromIntegral newChannelID) lastConsTag nxtSeq unconfSet aSet nSet ca closed conss retListeners cnfListeners handlers
         thrID <- forkFinally' (channelReceiver newChannel) $ \res -> do
-                   closeChannel' newChannel Normal "closed"
-                   case res of
-                     Right _ -> return ()
-                     Left ex -> do
-                        let unwrappedExc = unwrapChanThreadKilledException ex
-                        handlers' <- readMVar handlers
+            closeChannel' newChannel Normal "closed"
+            case res of
+                Right _ -> return ()
+                Left ex -> do
+                   let unwrappedExc = unwrapChanThreadKilledException ex
+                   handlers' <- readMVar handlers
 
-                        case (null handlers', fromAbnormalChannelClose unwrappedExc) of
-                            (True, Just reason) -> hPutStrLn stderr $ "unhandled AMQP channel exception (chanId="++show newChannelID++"): "++reason
-                            _ -> mapM_ ($ unwrappedExc) handlers'
+                   case (null handlers', fromAbnormalChannelClose unwrappedExc) of
+                       (True, Just reason) -> hPutStrLn stderr $ "unhandled AMQP channel exception (chanId="++show newChannelID++"): "++reason
+                       _ -> mapM_ ($ unwrappedExc) handlers'
         when (IM.member newChannelID mp) $ CE.throwIO $ userError "openChannel fail: channel already open"
         return (IM.insert newChannelID (newChannel, thrID) mp, newChannel)
 
-    SimpleMethod (Channel_open_ok _) <- request newChannel (SimpleMethod (Channel_open (ShortString "")))
+    SimpleMethod (Channel_open_ok _) <- request newChannel $ SimpleMethod $ Channel_open (ShortString "")
     return newChannel
 
   where
@@ -756,45 +750,44 @@ closeChannel c = do
 
 -- | writes multiple frames to the channel atomically
 writeFrames :: Channel -> [FramePayload] -> IO ()
-writeFrames chan payloads =
-    let conn = connection chan in
-        withMVar (connChannels conn) $ \chans ->
-            if IM.member (fromIntegral $ channelID chan) chans
-                then
-                    CE.catch
-                        -- ensure at most one thread is writing to the socket at any time
-                        (do
-                            withMVar (connWriteLock conn) $ \_ ->
-                                mapM_ (\payload -> writeFrame (connHandle conn) (Frame (channelID chan) payload)) payloads
-                            updateLastSent conn)
-                        ( \(_ :: CE.IOException) -> do
-                            CE.throwIO $ userError "connection not open"
-                        )
-                else do
-                    CE.throwIO $ userError "channel not open"
+writeFrames chan payloads = do
+    let conn = connection chan
+    withMVar (connChannels conn) $ \chans ->
+        if IM.member (fromIntegral $ channelID chan) chans
+            then CE.catch
+                -- ensure at most one thread is writing to the socket at any time
+                (do
+                    withMVar (connWriteLock conn) $ \_ ->
+                        mapM_ (\payload -> writeFrame (connHandle conn) (Frame (channelID chan) payload)) payloads
+                    updateLastSent conn)
+                (\(_ :: CE.IOException) -> do
+                    CE.throwIO $ userError "connection not open"
+                )
+            else do
+                CE.throwIO $ userError "channel not open"
 
 writeAssembly' :: Channel -> Assembly -> IO ()
 writeAssembly' chan (ContentMethod m properties msg) = do
     -- wait iff the AMQP server instructed us to withhold sending content data (flow control)
     waitLock $ chanActive chan
-    let !toWrite =
-           [(MethodPayload m),
-            (ContentHeaderPayload
+    let !toWrite = [
+            MethodPayload m,
+            ContentHeaderPayload
                 (getClassIDOf properties) --classID
                 0 --weight is deprecated in AMQP 0-9
                 (fromIntegral $ BL.length msg) --bodySize
-                properties)] ++
+                properties] ++
             (if BL.length msg > 0
              then do
                 -- split into frames of maxFrameSize
                 -- (need to substract 8 bytes to account for frame header and end-marker)
                 map ContentBodyPayload
-                    (splitLen msg $ (fromIntegral $ connMaxFrameSize $ connection chan) - 8)
+                    (splitLen msg $ fromIntegral (connMaxFrameSize $ connection chan) - 8)
              else []
             )
     writeFrames chan toWrite
   where
-    splitLen str len | BL.length str > len = (BL.take len str):(splitLen (BL.drop len str) len)
+    splitLen str len | BL.length str > len = BL.take len str : splitLen (BL.drop len str) len
     splitLen str _ = [str]
 writeAssembly' chan (SimpleMethod m) = writeFrames chan [MethodPayload m]
 
@@ -845,8 +838,7 @@ throwMostRelevantAMQPException chan = do
 
 waitForAllConfirms :: Channel -> STM (IntSet.IntSet, IntSet.IntSet)
 waitForAllConfirms chan = do
-  pending <- readTVar $ (unconfirmedSet chan)
-  check (IntSet.null pending)
-  return =<< (,)
-    <$> swapTVar (ackedSet chan) IntSet.empty
-    <*> swapTVar (nackedSet chan) IntSet.empty
+    pending <- readTVar $ unconfirmedSet chan
+    check (IntSet.null pending)
+    (,) <$> swapTVar (ackedSet chan) IntSet.empty
+        <*> swapTVar (nackedSet chan) IntSet.empty

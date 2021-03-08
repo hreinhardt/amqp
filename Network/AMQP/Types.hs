@@ -45,8 +45,8 @@ data CloseType = Normal | Abnormal
     deriving (Typeable, Show, Ord, Eq)
 
 data AMQPException =
-    -- | the 'String' contains the reason why the channel was closed
-    ChannelClosedException CloseType String
+      -- | the 'String' contains the reason why the channel was closed
+      ChannelClosedException CloseType String
     | ConnectionClosedException CloseType String -- ^ String may contain a reason
     | AllChannelsAllocatedException Int -- ^ the 'Int' contains the channel-max property of the connection (i.e. the highest permitted channel id)
   deriving (Typeable, Show, Ord, Eq)
@@ -86,9 +86,9 @@ newtype ShortString = ShortString Text
     deriving (Eq, Ord, Read, Show)
 instance Binary ShortString where
     get = do
-      len <- getWord8
-      dat <- getByteString (fromIntegral len)
-      return $ ShortString $ T.decodeUtf8 dat
+        len <- getWord8
+        dat <- getByteString (fromIntegral len)
+        return $ ShortString $ T.decodeUtf8 dat
 
     put (ShortString x) = do
         let s = T.encodeUtf8 x
@@ -102,9 +102,9 @@ newtype LongString = LongString BS.ByteString
     deriving (Eq, Ord, Read, Show)
 instance Binary LongString where
     get = do
-      len <- getWord32be
-      dat <- getByteString (fromIntegral len)
-      return $ LongString dat
+        len <- getWord32be
+        dat <- getByteString (fromIntegral len)
+        return $ LongString dat
 
     put (LongString x) = do
         putWord32be $ fromIntegral (BS.length x)
@@ -125,7 +125,7 @@ instance Binary FieldTable where
                 fvp <- getLazyByteString (fromIntegral len)
                 let !fields = readMany fvp
                 return $ FieldTable $ M.fromList $ map (\(ShortString a, b) -> (a,b)) fields
-            else return $ FieldTable $ M.empty
+            else return $ FieldTable M.empty
 
     put (FieldTable fvp) = do
         let bytes = runPut (putMany $ map (\(a,b) -> (ShortString a, b)) $ M.toList fvp) :: BL.ByteString
@@ -192,7 +192,7 @@ instance Binary FieldValue where
     put (FVString x) = put 'S' >> put (LongString x)
     put (FVFieldArray x) = do
         put 'A'
-        if length x == 0
+        if null x
             then put (0 :: Int32)
             else do
                 let bytes = runPut (putMany x) :: BL.ByteString
@@ -200,7 +200,7 @@ instance Binary FieldValue where
                 putLazyByteString bytes
     put (FVTimestamp s)    = put 'T' >> put s
     put (FVFieldTable s)   = put 'F' >> put s
-    put (FVVoid) = put 'V'
+    put FVVoid = put 'V'
     put (FVByteArray x) = do
         put 'x'
         let len = fromIntegral (BS.length x) :: Word32
