@@ -1,3 +1,8 @@
+### Version 0.21.0
+
+* added method `isNormalChannelClose`
+* Channels that have no explicit exception handlers (added using `addChannelExceptionHandler`) will now print all exceptions to `stderr`, even if those are not of type `ChannelClosedException`. This is an uncommon situation, so it should not have an observable effect for most users.
+
 ### Version 0.20.0
 
 * `fromURI` now activates TLS if the URI starts with `ampqs://`. Previously it only changed the port, without activating TLS.
