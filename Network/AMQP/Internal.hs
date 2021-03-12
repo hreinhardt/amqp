@@ -778,7 +778,7 @@ closeChannel c = do
     SimpleMethod Channel_close_ok <- request c $ SimpleMethod $ Channel_close 0 (ShortString "") 0 0
     withMVar (connChannels $ connection c) $ \chans -> do
         case IM.lookup (fromIntegral $ channelID c) chans of
-            Just (_, thrID) -> killThread thrID
+            Just (_, thrID) -> throwTo thrID $ ChannelClosedException Normal "closeChannel was called"
             Nothing -> return ()
 
 -- | writes multiple frames to the channel atomically
