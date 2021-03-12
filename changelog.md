@@ -1,3 +1,7 @@
+### Version 0.22.0
+
+* `closeChannel` now uses a `ChannelClosedException` to kill the channel-thread instead of `ThreadKilled`. This fixes a bug in 0.21.0 that led to errors being printed on the screen when `closeChannel` was called.
+
 ### Version 0.21.0
 
 * added method `isNormalChannelClose`
