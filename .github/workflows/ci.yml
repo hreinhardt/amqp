@@ -61,6 +61,8 @@ jobs:
     - name: Build
       run: |
           cabal build --enable-tests --disable-optimization 2>&1 | tee build.log
+    - name: Install RabbitMQ server
+      run: sudo apt-get install rabbitmq-server
     - name: Test
       run: |
           cabal test --disable-optimization
