@@ -1,6 +1,7 @@
 # RabbitMQ Client for Haskell
 
 [![Hackage](https://img.shields.io/hackage/v/amqp.svg)](https://hackage.haskell.org/package/amqp)
+[![Build status](https://github.com/hreinhardt/amqp/actions/workflows/ci.yml/badge.svg)](https://github.com/hreinhardt/amqp/actions/workflows/ci.yml)
 
 This is a library for accessing RabbitMQ from Haskell.
 
