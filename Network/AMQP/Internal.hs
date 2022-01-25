@@ -148,7 +148,8 @@ data Connection = Connection {
     connBlockedHandlers :: MVar [(Text -> IO (), IO ())],
     connLastReceived :: MVar Int64, -- the timestamp from a monotonic clock when the last frame was received
     connLastSent :: MVar Int64, -- the timestamp from a monotonic clock when the last frame was written
-    connServerProperties :: FieldTable -- the server properties sent in Connection_start
+    connServerProperties :: FieldTable, -- the server properties sent in Connection_start
+    connThread :: MVar (Maybe ThreadId)
 }
 
 -- | Represents the parameters to connect to a broker or a cluster of brokers.
@@ -278,10 +279,12 @@ openConnection'' connOpts = withSocketsDo $ do
     cBlockedHandlers <- newMVar []
     cLastReceived <- getTimestamp >>= newMVar
     cLastSent <- getTimestamp >>= newMVar
-    let conn = Connection handle cChanAllocator cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cClosedHandlers cBlockedHandlers cLastReceived cLastSent serverProps
+    cThread <- newMVar Nothing
+
+    let conn = Connection handle cChanAllocator cChannels (fromIntegral maxFrameSize) cClosed ccl writeLock cClosedHandlers cBlockedHandlers cLastReceived cLastSent serverProps cThread
 
     --spawn the connectionReceiver
-    connThread <- forkFinally' (connectionReceiver conn) $ \res -> do
+    connThreadId <- forkFinally' (connectionReceiver conn) $ \res -> do
         -- try closing socket
         CE.catch (Conn.connectionClose handle) (\(_ :: CE.SomeException) -> return ())
 
@@ -309,9 +312,10 @@ openConnection'' connOpts = withSocketsDo $ do
     case heartbeatTimeout of
         Nothing      -> return ()
         Just timeout -> do
-            heartbeatThread <- watchHeartbeats conn (fromIntegral timeout) connThread
+            heartbeatThread <- watchHeartbeats conn (fromIntegral timeout) connThreadId
             addConnectionClosedHandler conn True (killThread heartbeatThread)
 
+    modifyMVar_ cThread $ \_ -> return $ Just connThreadId
     return conn
   where
     connect excs ((host, port) : rest) = do
@@ -408,9 +412,9 @@ updateLastReceived conn = modifyMVar_ (connLastReceived conn) (const getTimestam
 
 -- | kill the connection thread abruptly
 killConnection :: Connection -> CloseType -> CE.SomeException -> ThreadId -> IO ()
-killConnection conn closeType ex connThread = do
+killConnection conn closeType ex connThreadId = do
     modifyMVar_ (connClosed conn) $ const $ return $ Just (closeType, show ex)
-    throwTo connThread ex
+    throwTo connThreadId ex
 
 -- | closes a connection
 --
@@ -425,9 +429,12 @@ closeConnection c = do
             0 -- class_id
             0 -- method_id
         )
-        (\ (_ :: CE.IOException) ->
-            --do nothing if connection is already closed
-            return ()
+        (\ (e :: CE.IOException) -> do
+            -- Make sure the connection is closed.
+            -- (This pattern match can't fail, since openConnection'' will always fill
+            --  the variable in, and there's no other way to get a connection.)
+            Just thrID <- readMVar (connThread c)
+            killConnection c Abnormal (CE.toException e) thrID
         )
 
     -- wait for connection_close_ok by the server; this MVar gets filled in the CE.finally handler in openConnection'
