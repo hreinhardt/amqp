@@ -7,3 +7,4 @@ testing/
 .cabal-sandbox/*
 cabal.sandbox.config
 .hub
+.stack-work/
