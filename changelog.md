@@ -1,3 +1,7 @@
+### Version 0.22.2
+
+* connection management example added
+
 ### Version 0.22.1
 
 * fix a potential deadlock in `closeConnection`

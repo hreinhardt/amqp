@@ -1,18 +1,17 @@
-{-# OPTIONS -XOverloadedStrings #-}
-module ExampleConfirms where
+{-# LANGUAGE OverloadedStrings #-}
+module Main where
 
 import Network.AMQP
 import Control.Monad(forM_,forever)
 import Control.Concurrent(forkIO,threadDelay)
-import Control.Concurrent.Chan
-import Control.Concurrent.STM
-import Data.Time.Clock
 import Data.IntSet
 import qualified Data.ByteString.Lazy.Char8 as BL
 
 showResult :: ConfirmationResult -> IO ()
 showResult (Partial (a, n, p)) = putStrLn $ "Acks: "++(show . size $ a)++" Nacks: "++(show . size $ n)++" pending: "++(show . size $ p)
 showResult (Complete (a, n)) = putStrLn $ "Acks: "++(show . size $ a)++" Nacks: "++(show . size $ n)
+
+main :: IO ()
 main = do
     conn <- openConnection "localhost" "/" "guest" "guest"
     chan <- openChannel conn
@@ -20,15 +19,15 @@ main = do
     confirmSelect chan False
 
     --declare queues and bindings
-    declareQueue chan newQueue {queueName = "myQueue", queueAutoDelete = True}
+    _ <- declareQueue chan newQueue {queueName = "myQueue", queueAutoDelete = True}
     bindQueue chan "myQueue" "amq.topic" "conf.*"
 
     --activate a consumer so that messages won't be returned
-    consumeMsgs chan "myQueue" Ack (\(msg,env) -> ackEnv env)
+    _ <- consumeMsgs chan "myQueue" Ack (\(_msg,env) -> ackEnv env)
 
-    forkIO $ forever $ do
+    _ <- forkIO $ forever $ do
       putStrLn "Publishing messages.."
-      forM_ [1..100] (\i -> publishMsg chan
+      forM_ [1..100] (\_ -> publishMsg chan
                             "amq.topic"
                             "conf.hello"
                             (newMsg {msgBody = (BL.pack "hallo welt"), msgDeliveryMode = Just NonPersistent})
@@ -37,5 +36,5 @@ main = do
       showResult =<< waitForConfirms chan -- or waitForConfirmsUntil chan (10^6)
       threadDelay (10^6)
 
-    getLine
+    _ <- getLine
     closeConnection conn

@@ -1,5 +1,5 @@
 Name:                amqp
-Version:             0.22.1
+Version:             0.22.2
 Synopsis:            Client library for AMQP servers (currently only RabbitMQ)
 Description:         Client library for AMQP servers (currently only RabbitMQ)
 License:             BSD3
@@ -33,11 +33,10 @@ Library
     stm >= 2.4.0,
     network-uri >= 2.6,
     network > 2.6
-
-
   Exposed-modules:    Network.AMQP, Network.AMQP.Types, Network.AMQP.Lifted
   Other-modules:      Network.AMQP.ChannelAllocator, Network.AMQP.Generated, Network.AMQP.Helpers, Network.AMQP.Protocol, Network.AMQP.Internal, Paths_amqp
   GHC-Options:        -Wall
+
 
 Executable amqp-builder
   default-language: Haskell2010
@@ -45,6 +44,73 @@ Executable amqp-builder
   Hs-Source-Dirs:     Tools
   Main-is:            Builder.hs
   GHC-Options:        -Wall
+
+
+Executable amqp-example-confirms
+  default-language:   Haskell2010
+  Hs-Source-Dirs:     examples/confirms
+  Main-is:            ExampleConfirms.hs
+  GHC-Options:        -Wall
+  Build-Depends:      base >= 4 && < 5
+                    , amqp
+                    , bytestring>=0.9
+                    , stm >= 2.4.0
+                    , time
+                    , containers >= 0.2
+
+
+Executable amqp-example-consumer
+  default-language:   Haskell2010
+  Hs-Source-Dirs:     examples/consumer
+  Main-is:            ExampleConsumer.hs
+  GHC-Options:        -Wall
+  Build-Depends:      base >= 4 && < 5
+                    , amqp
+                    , bytestring>=0.9
+                    , stm >= 2.4.0
+                    , time
+                    , containers >= 0.2
+
+
+Executable amqp-example-producer
+  default-language:   Haskell2010
+  Hs-Source-Dirs:     examples/producer
+  Main-is:            ExampleProducer.hs
+  GHC-Options:        -Wall
+  Build-Depends:      base >= 4 && < 5
+                    , amqp
+                    , bytestring>=0.9
+                    , stm >= 2.4.0
+                    , time
+                    , containers >= 0.2
+
+
+Executable amqp-example-tls-consumer
+  default-language:   Haskell2010
+  Hs-Source-Dirs:     examples/tlsConsumer
+  Main-is:            ExampleTLSConsumer.hs
+  GHC-Options:        -Wall
+  Build-Depends:      base >= 4 && < 5
+                    , amqp
+                    , bytestring>=0.9
+                    , stm >= 2.4.0
+                    , time
+                    , containers >= 0.2
+
+
+Executable amqp-example-tls-producer
+  default-language:   Haskell2010
+  Hs-Source-Dirs:     examples/tlsProducer
+  Main-is:            ExampleTLSProducer.hs
+  GHC-Options:        -Wall
+  Build-Depends:      base >= 4 && < 5
+                    , amqp
+                    , bytestring>=0.9
+                    , stm >= 2.4.0
+                    , time
+                    , containers >= 0.2
+
+
 
 source-repository head
   type:     git
