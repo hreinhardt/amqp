@@ -1,16 +1,6 @@
 Name:                producer
-Version:             0.22.2
-Synopsis:            Client library for AMQP servers (currently only RabbitMQ)
-Description:         Client library for AMQP servers (currently only RabbitMQ)
-License:             BSD3
-Stability:           alpha
-License-file:        LICENSE
-Author:              Holger Reinhardt
-Category:            Network
-Maintainer:          Holger Reinhardt <hreinhardt@gmail.com>
+Version:             1
 Build-Type:          Simple
-Homepage:            https://github.com/hreinhardt/amqp
-bug-reports:         https://github.com/hreinhardt/amqp/issues
 Cabal-Version:       >=1.10
 
 
@@ -25,10 +15,3 @@ Executable amqp-example-producer
                     , stm >= 2.4.0
                     , time
                     , containers >= 0.2
-
-
-
-source-repository head
-  type:     git
-  location: https://github.com/hreinhardt/amqp
-

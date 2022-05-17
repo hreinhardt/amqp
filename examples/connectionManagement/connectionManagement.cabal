@@ -1,17 +1,7 @@
 Name:                connectionManagement
-Version:             0.22.2
-Synopsis:            Client library for AMQP servers (currently only RabbitMQ)
-Description:         Client library for AMQP servers (currently only RabbitMQ)
-License:             BSD3
-Stability:           alpha
-License-file:        LICENSE
-Author:              Holger Reinhardt
-Category:            Network
-Maintainer:          Holger Reinhardt <hreinhardt@gmail.com>
-Build-Type:          Simple
-Homepage:            https://github.com/hreinhardt/amqp
-bug-reports:         https://github.com/hreinhardt/amqp/issues
+Version:             1
 Cabal-Version:       >=1.10
+Build-Type:          Simple
 
 Executable amqp-example-connection-management
   default-language:   Haskell2010
@@ -29,9 +19,3 @@ Executable amqp-example-connection-management
                     , stm >= 2.4.0
                     , text
                     , time
-
-
-
-source-repository head
-  type:     git
-  location: https://github.com/hreinhardt/amqp
