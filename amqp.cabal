@@ -12,9 +12,7 @@ Build-Type:          Simple
 Homepage:            https://github.com/hreinhardt/amqp
 bug-reports:         https://github.com/hreinhardt/amqp/issues
 Cabal-Version:       >=1.10
-Extra-source-files:  examples/ExampleConsumer.hs,
-                     examples/ExampleProducer.hs,
-                     changelog.md
+Extra-source-files:  changelog.md
 
 Library
   default-language: Haskell2010
@@ -44,90 +42,6 @@ Executable amqp-builder
   Hs-Source-Dirs:     Tools
   Main-is:            Builder.hs
   GHC-Options:        -Wall
-
-
-Executable amqp-example-confirms
-  default-language:   Haskell2010
-  Hs-Source-Dirs:     examples/confirms
-  Main-is:            ExampleConfirms.hs
-  GHC-Options:        -Wall
-  Build-Depends:      base >= 4 && < 5
-                    , amqp
-                    , bytestring>=0.9
-                    , stm >= 2.4.0
-                    , time
-                    , containers >= 0.2
-
-
-Executable amqp-example-consumer
-  default-language:   Haskell2010
-  Hs-Source-Dirs:     examples/consumer
-  Main-is:            ExampleConsumer.hs
-  GHC-Options:        -Wall
-  Build-Depends:      base >= 4 && < 5
-                    , amqp
-                    , bytestring>=0.9
-                    , stm >= 2.4.0
-                    , time
-                    , containers >= 0.2
-
-
-Executable amqp-example-producer
-  default-language:   Haskell2010
-  Hs-Source-Dirs:     examples/producer
-  Main-is:            ExampleProducer.hs
-  GHC-Options:        -Wall
-  Build-Depends:      base >= 4 && < 5
-                    , amqp
-                    , bytestring>=0.9
-                    , stm >= 2.4.0
-                    , time
-                    , containers >= 0.2
-
-
-Executable amqp-example-tls-consumer
-  default-language:   Haskell2010
-  Hs-Source-Dirs:     examples/tlsConsumer
-  Main-is:            ExampleTLSConsumer.hs
-  GHC-Options:        -Wall
-  Build-Depends:      base >= 4 && < 5
-                    , amqp
-                    , bytestring>=0.9
-                    , stm >= 2.4.0
-                    , time
-                    , containers >= 0.2
-
-
-Executable amqp-example-tls-producer
-  default-language:   Haskell2010
-  Hs-Source-Dirs:     examples/tlsProducer
-  Main-is:            ExampleTLSProducer.hs
-  GHC-Options:        -Wall
-  Build-Depends:      base >= 4 && < 5
-                    , amqp
-                    , bytestring>=0.9
-                    , stm >= 2.4.0
-                    , time
-                    , containers >= 0.2
-
-
-Executable amqp-example-connection-management
-  default-language:   Haskell2010
-  Hs-Source-Dirs:     examples/connectionManagement
-  Main-is:            ExampleConnectionManagement.hs
-  other-modules:      ConnectionManager
-  GHC-Options:        -Wall
-  Build-Depends:      base >= 4 && < 5
-                    , amqp
-                    , bytestring>=0.9
-                    , containers >= 0.2
-                    , resource-pool
-                    , safe
-                    , safe-exceptions
-                    , stm >= 2.4.0
-                    , text
-                    , time
-
 
 
 source-repository head

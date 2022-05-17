@@ -44,6 +44,7 @@ import           Network.AMQP ( Ack(..)
 import qualified ConnectionManager as Cm
 
 -- | Example showing the use of ConnectionManager to manage connection and channel failure
+-- You can run this example by running `make run-example-connection-management`
 main :: IO ()
 main = do
   -- Use `mkHandle` rather than `openConnection`
