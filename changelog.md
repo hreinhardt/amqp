@@ -1,3 +1,7 @@
+### Version 0.22.2
+
+* replace `connection` dependency with `crypton-connection`
+
 ### Version 0.22.1
 
 * fix a potential deadlock in `closeConnection`
