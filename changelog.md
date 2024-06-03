@@ -1,3 +1,7 @@
+### Version 0.23.0
+
+* bump dependency bounds for `crypton-connection`
+
 ### Version 0.22.2
 
 * replace `connection` dependency with `crypton-connection`
