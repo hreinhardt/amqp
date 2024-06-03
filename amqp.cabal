@@ -78,6 +78,7 @@ test-suite spec
     , containers>=0.2
     , bytestring>=0.9
     , data-binary-ieee754>=0.4.2.1
+    , data-default-class >= 0.1
     , text>=0.11.2
     , split>=0.2
     , clock >= 0.4.0.1
