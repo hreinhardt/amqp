@@ -12,7 +12,7 @@ on:
 jobs:
   linux:
 
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
@@ -24,6 +24,12 @@ jobs:
           - ghc: '9.0'
             cabal: 'latest'
           - ghc: '9.2'
+            cabal: 'latest'
+          - ghc: '9.4'
+            cabal: 'latest'
+          - ghc: '9.6'
+            cabal: 'latest'
+          - ghc: '9.8'
             cabal: 'latest'
     steps:
     - uses: actions/checkout@v2
