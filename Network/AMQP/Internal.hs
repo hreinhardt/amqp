@@ -11,6 +11,7 @@ import Control.Monad
 import Data.Binary
 import Data.Binary.Get
 import Data.Binary.Put as BPut
+import Data.Default.Class
 import Data.Int (Int64)
 import Data.Maybe
 import Data.Text (Text)
@@ -174,8 +175,8 @@ data TLSSettings =
 connectionTLSSettings :: TLSSettings -> Maybe Conn.TLSSettings
 connectionTLSSettings tlsSettings =
     Just $ case tlsSettings of
-        TLSTrusted -> Conn.TLSSettingsSimple False False False
-        TLSUntrusted -> Conn.TLSSettingsSimple True False False
+        TLSTrusted -> Conn.TLSSettingsSimple False False False def
+        TLSUntrusted -> Conn.TLSSettingsSimple True False False def
         TLSCustom x -> x
 
 -- | A 'SASLMechanism' is described by its name ('saslName'), its initial response ('saslInitialResponse'), and an optional function ('saslChallengeFunc') that
