@@ -1,3 +1,7 @@
+### Version 0.24.0
+
+* the `fromURI` method now returns `Either String ConnectionOpts` to better handle parsing-errors
+
 ### Version 0.23.0
 
 * bump dependency bounds for `crypton-connection`

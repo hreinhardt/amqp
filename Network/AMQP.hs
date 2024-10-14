@@ -1,4 +1,4 @@
-{-# LANGUAGE BangPatterns, DeriveDataTypeable, OverloadedStrings, ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns, DeriveDataTypeable, OverloadedStrings, ScopedTypeVariables, TupleSections #-}
 -- |
 --
 -- A client library for AMQP servers implementing the 0-9-1 spec; currently only supports RabbitMQ (see <http://www.rabbitmq.com>)
@@ -174,6 +174,7 @@ import Network.AMQP.Types
 import Network.AMQP.Generated
 import Network.AMQP.Internal
 import Network.AMQP.Helpers
+import Text.Read (readMaybe)
 
 ----- EXCHANGE -----
 
@@ -703,35 +704,51 @@ qos chan prefetchSize prefetchCount global = do
         global
     return ()
 
--- | Parses amqp standard URI of the form @amqp://user:password@host:port/vhost@ and returns a @ConnectionOpts@ for use with @openConnection''@
--- | Any of these fields may be empty and will be replaced with defaults from @amqp://guest:guest@localhost:5672/@
-fromURI :: String -> ConnectionOpts
-fromURI uri = defaultConnectionOpts {
-    coServers     = hostPorts',
-    coVHost       = T.pack vhost,
-    coAuth        = [plain (T.pack uid) (T.pack pw)],
-    coTLSSettings = if tls then Just TLSTrusted else Nothing
-  }
-  where (hostPorts, uid, pw, vhost, tls) = fromURI' uri
-        hostPorts' = [(h, fromIntegral p) | (h, p) <- hostPorts]
+-- | Parses an AMQP standard URI of the form @amqp://user:password\@host:port\/vhost@ and returns a 'ConnectionOpts' for use with 'openConnection'''.
+--
+-- To pass multiple servers, separate them by comma, like: @amqp://user:password\@host:port,host2:port2\/vhost@
+--
+-- Any of these fields may be empty and will be replaced with defaults from @amqp://guest:guest\@localhost:5672\/@
+--
+-- When parsing fails, a @Left String@ will be returned with a human-readable error-message.
+fromURI :: String -> Either String ConnectionOpts
+fromURI uri =
+    case fromURI' uri of
+        Right (hostPorts, uid, pw, vhost, tls) ->
+            Right $ defaultConnectionOpts {
+                coServers     = hostPorts,
+                coVHost       = T.pack vhost,
+                coAuth        = [plain (T.pack uid) (T.pack pw)],
+                coTLSSettings = if tls then Just TLSTrusted else Nothing
+            }
+        Left err -> Left err
 
-fromURI' :: String -> ([(String, Int)], String, String, String, Bool)
-fromURI' uri = (fromHostPort dport <$> hstPorts,
-    unEscapeString (dropWhile (=='/') uid), unEscapeString pw,
-    unEscapeString vhost, tls)
+fromURI' :: String -> Either String ([(String, PortNumber)], String, String, String, Bool)
+fromURI' uri =
+    case sequence (map (fromHostPort dport) hostPorts) of
+        Right hostPorts' -> Right (
+            hostPorts',
+            unEscapeString (dropWhile (=='/') uid),
+            unEscapeString pw,
+            unEscapeString vhost,
+            tls
+         )
+        Left err -> Left err
   where (pre :suf  :    _) = splitOn "@" (uri ++ "@" ) -- look mom, no regexp dependencies
         (pro :uid' :pw':_) = splitOn ":" (pre ++ "::")
         (hnp :thost:    _) = splitOn "/" (suf ++ "/" )
-        hstPorts           = splitOn "," hnp
+        hostPorts          = splitOn "," hnp
         vhost = if null thost     then "/"     else thost
         dport = if pro == "amqps" then 5671    else 5672
         uid   = if null uid'      then "guest" else uid'
         pw    = if null pw'       then "guest" else pw'
         tls   = pro == "amqps"
 
-fromHostPort :: Int -> String -> (String, Int)
-fromHostPort dport hostPort = (unEscapeString host, nport)
+fromHostPort :: PortNumber -> String -> Either String (String, PortNumber)
+fromHostPort defPort hostPort = (unEscapeString host, ) <$> nport
     where
         (hst':port :    _) = splitOn ":" (hostPort ++ ":" )
         host  = if null hst' then "localhost" else hst'
-        nport = if null port then dport       else read port
+        nport = if null port
+                    then Right defPort
+                    else maybe (Left $ "invalid port number: "++port) Right $ readMaybe port
